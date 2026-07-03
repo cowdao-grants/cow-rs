@@ -28,10 +28,12 @@ pub use self::{
     chain::{Chain, UnsupportedChain},
     composable::{
         COMPOSABLE_COW, CURRENT_BLOCK_TIMESTAMP_FACTORY, ComposableCoW, ConditionalOrderParams,
-        ConditionalOrderRevert, EXTENSIBLE_FALLBACK_HANDLER, IConditionalOrder, PayloadStruct,
-        Proof, ProofLocation, TWAP_HANDLER, TwapData, TwapDataBuilder, TwapDuration, TwapError,
-        TwapStart, TwapStaticInput, decode_conditional_order_revert, forwarder_signature,
-        safe_handler_signature,
+        ConditionalOrderRevert, EXTENSIBLE_FALLBACK_HANDLER,
+        GET_TRADEABLE_ORDER_WITH_SIGNATURE_SELECTOR, GetTradeableOrderWithSignatureCall,
+        IConditionalOrder, PayloadStruct, Proof, ProofLocation, TWAP_HANDLER,
+        TradeableOrderWithSignature, TradeableOrderWithSignatureRevert, TwapData, TwapDataBuilder,
+        TwapDuration, TwapError, TwapStart, TwapStaticInput, decode_conditional_order_revert,
+        forwarder_signature, safe_handler_signature,
     },
     contracts::{
         CoWSwapEthFlow, CoWSwapOnchainOrders, ERC20, EthFlowOrderData, GPV2_ORDER_TYPE_HASH,
