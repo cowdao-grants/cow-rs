@@ -1,0 +1,116 @@
+# Upstream source pins for cow-rs conformance.
+#
+# Each entry below names a repository whose source we treat as the
+# authority for some piece of cow-rs behaviour: EIP-712 hashing, order
+# UID packing, app-data canonicalisation, fee composition, settlement
+# domain separators. Conformance vectors elsewhere in the repo reference
+# these shas; CI cross-checks that every reference in `recon/` and
+# `crates/cowprotocol/src/**/*.rs` is one of the shas listed here, so a
+# silent upstream drift can never go unnoticed.
+#
+# Bumping a pin is a deliberate act:
+#   1. Update the `sha` field below.
+#   2. Re-derive every vector that references it (re-fetch with
+#      `tools/vector-gen` or by hand) and update the test data.
+#   3. Run `just test` and ensure the vector round-trips byte-for-byte.
+#   4. Mention the bump in the PR description so reviewers can audit
+#      what behaviour shifted.
+#
+# This file is the cow-rs analogue of the `parity/source-lock.yaml`
+# concept in PR #3 ("ferrous foundation"). We adopted the shape but
+# anchored it to the recon work in `recon/cross-sdk-vectors/`.
+
+version = 1
+
+[[source]]
+name = "cow-sdk-ts"
+repo = "cowprotocol/cow-sdk"
+url = "https://github.com/cowprotocol/cow-sdk"
+sha = "00c3dbd41c086ff9a51d5e5a30648615d4c66d0d"
+why = "TypeScript SDK — canonical user-facing surface (quote, sign, submit, app-data, EIP-712)."
+producers = [
+    "packages/order-book/src/quoteAmountsAndCosts/getQuoteAmountsAndCosts.ts",
+    "packages/order-book/src/quoteAmountsAndCosts/getProtocolFeeAmount.ts",
+    "packages/order-book/src/quoteAmountsAndCosts/getQuoteAmountsAfterPartnerFee.ts",
+    "packages/order-book/src/quoteAmountsAndCosts/getQuoteAmountsAfterSlippage.ts",
+    "packages/order-signing/src/utils/typedData.ts",
+    "packages/trading/src/postCoWProtocolTrade.ts",
+    "packages/trading/src/postCoWProtocolTrade.test.ts",
+]
+
+[[source]]
+name = "cow-sdk-ts-pr-867"
+repo = "cowprotocol/cow-sdk"
+url = "https://github.com/cowprotocol/cow-sdk/pull/867"
+sha = "00c3dbd41c086ff9a51d5e5a30648615d4c66d0d"
+why = "`fix(trading): take protocol fee into account`. crates/cowprotocol/src/quote_amounts.rs is the Rust port of this PR; the conformance test `matches_ts_pr_867_partner_plus_protocol_fee_divergence` locks the exact buy_amount divergence the TS test pinned (1_970_090_045_022_511_257 vs 1_970_100_000_000_000_000)."
+producers = [
+    "packages/trading/src/postCoWProtocolTrade.test.ts",
+    "packages/trading/src/types.ts",
+]
+
+[[source]]
+name = "contracts"
+repo = "cowprotocol/contracts"
+url = "https://github.com/cowprotocol/contracts"
+sha = "c6b61ce75841ce4c25ab126def9cc981c568e6c6"
+why = "Solidity reference: GPv2Order struct layout, EIP-712 type strings, settlement / vault-relayer addresses."
+producers = [
+    "src/contracts/libraries/GPv2Order.sol",
+    "src/contracts/libraries/GPv2Trade.sol",
+    "test/GPv2Order.test.ts",
+    "test/GPv2Signing.test.ts",
+]
+
+[[source]]
+name = "services"
+repo = "cowprotocol/services"
+url = "https://github.com/cowprotocol/services"
+sha = "47af30fe6914b3f27f4f3622171d038bcc8e6131"
+why = "Server-side Rust. Settlement-facing OrderUid packing and model::order::OrderData definitions."
+producers = [
+    "crates/contracts/src/gpv2_order.rs",
+    "crates/model/src/order.rs",
+    "crates/model/src/signature.rs",
+    "crates/app-data-hash/src/lib.rs",
+    "crates/shared/src/order_validation.rs",
+]
+
+[[source]]
+name = "cow-py"
+repo = "cowdao-grants/cow-py"
+url = "https://github.com/cowdao-grants/cow-py"
+sha = "141e8ed8a425aec953f2abcdfa37df73655feae5"
+why = "Python SDK. TWAP staticInput encoding + multiplexer merkle leaf layout reference; cross-language conformance for ComposableCoW."
+producers = [
+    "cowdao_cowpy/composable/types.py",
+    "cowdao_cowpy/composable/order_types/twap.py",
+    "cowdao_cowpy/composable/multiplexer.py",
+    "tests/composable/test_twap.py",
+    "tests/composable/test_multiplexer.py",
+]
+
+[[source]]
+name = "app-data"
+repo = "cowprotocol/app-data"
+url = "https://github.com/cowprotocol/app-data"
+sha = "31f130d1838ea5018facdfe240aef46ff0cc1881"
+why = "Canonical AppData JSON Schema. Every version we accept (1.0.0 to 1.6.0) must be expressible against these schema documents."
+producers = [
+    "src/schemas/v1.6.0.json",
+    "src/schemas/v1.5.0.json",
+    "src/schemas/definitions.json",
+    "src/schemas/partnerFee/v1.0.0.json",
+    "src/schemas/quote/v1.1.0.json",
+    "src/schemas/referrer/v0.2.0.json",
+]
+
+[[source]]
+name = "subgraph"
+repo = "cowprotocol/subgraph"
+url = "https://github.com/cowprotocol/subgraph"
+sha = "ebab4ae0e75cada2628e937a1711ec0ea14b3fb1"
+why = "Subgraph GraphQL schema. Our `subgraph` module hand-codes queries against these entities; the schema_validation tests assert every entity we reference exists upstream."
+producers = [
+    "schema.graphql",
+]

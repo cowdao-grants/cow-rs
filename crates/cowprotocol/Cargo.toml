@@ -1,0 +1,68 @@
+[package]
+name = "cowprotocol"
+version = "0.2.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme.workspace = true
+description = "Rust SDK for CoW Protocol: orderbook client, EIP-712 order types, signing, and composable-order primitives."
+homepage = "https://github.com/cowdao-grants/cow-rs"
+documentation = "https://docs.rs/cowprotocol"
+keywords = ["cow-protocol", "ethereum", "defi", "alloy", "sdk"]
+categories = ["cryptography::cryptocurrencies", "api-bindings", "wasm"]
+
+# Build docs for both targets so the per-target transports
+# (ReqwestTransport natively, FetchTransport on wasm32) all render.
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+targets = ["x86_64-unknown-linux-gnu", "wasm32-unknown-unknown"]
+
+[lints]
+workspace = true
+
+[features]
+default = ["http-client", "subgraph"]
+# `http-client` enables the orderbook HTTP client over the target's
+# default transport: reqwest natively, the browser `fetch` global on
+# wasm32 (reqwest never enters a wasm build). Hashing and signing-only
+# consumers (PG extension via pgrx, FFI shim, embedded context, etc.)
+# disable it to drop the HTTP stack from the build.
+http-client = ["cowprotocol-orderbook/http-client"]
+# `subgraph` enables the GraphQL client. It depends on `http-client`
+# because the subgraph executor rides the same default transport.
+subgraph = ["http-client", "cowprotocol-orderbook/subgraph"]
+
+[dependencies]
+cowprotocol-appdata = { version = "0.2.0", path = "../cowprotocol-appdata" }
+cowprotocol-orderbook = { version = "0.2.0", path = "../cowprotocol-orderbook", default-features = false }
+cowprotocol-primitives = { version = "0.1.1", path = "../cowprotocol-primitives" }
+cowprotocol-signing = { version = "0.2.0", path = "../cowprotocol-signing" }
+
+[dev-dependencies]
+alloy-primitives.workspace = true
+alloy-signer.workspace = true
+alloy-signer-local.workspace = true
+const-hex.workspace = true
+hex-literal.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+reqwest = { workspace = true, features = ["rustls-tls"] }
+wiremock.workspace = true
+# Builds a `reqwest::Response` from an in-memory body with no
+# `Content-Length` header, to exercise the streaming response cap.
+http = "1"
+
+# Both examples drive the async orderbook client, so they only build
+# when `http-client` is on (it is, by default).
+[[example]]
+name = "get_quote"
+required-features = ["http-client"]
+
+[[example]]
+name = "post_order"
+required-features = ["http-client"]

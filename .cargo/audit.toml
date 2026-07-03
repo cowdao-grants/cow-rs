@@ -1,0 +1,14 @@
+# cargo-audit configuration.
+#
+# Mirrors the advisory ignores in deny.toml so the daily `cargo audit`
+# cron has the same allow-list as the supply-chain `cargo deny check`
+# job. Keep this file and the [advisories] block of deny.toml in lock
+# step: add or drop entries here whenever you touch deny.toml.
+
+[advisories]
+ignore = [
+    # paste: pulled via alloy-sol-macro-expander -> syn-solidity.
+    "RUSTSEC-2024-0436",
+    # derivative: pulled via ark-* (transitive of alloy-primitives -> ruint).
+    "RUSTSEC-2024-0388",
+]

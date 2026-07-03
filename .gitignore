@@ -1,0 +1,32 @@
+/target
+**/*.rs.bk
+Cargo.lock.bak
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+
+# Recon and synthesis artefacts (kept out of upstream)
+/recon
+
+# Per-agent worktrees managed by the harness
+/.claude
+
+# Node generator artefacts
+tools/vector-gen/node_modules
+tools/vector-gen/vectors.json
+
+# Generated wasm-pack output. The dev harness writes to pkg/; release
+# builds for the web / bundler / nodejs targets land in pkg-web/,
+# pkg-bundler/, pkg-nodejs/. Regenerate locally with `just wasm-build`
+# (dev) or `just wasm-build-all` (release).
+crates/cow-sdk-wasm/pkg*
+
+# Local PR description drafts. The current PR body lives on GitHub;
+# this file is the easy-to-copy working draft.
+PR_DESCRIPTION.md

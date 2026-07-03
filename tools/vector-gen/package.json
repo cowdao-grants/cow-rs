@@ -1,0 +1,14 @@
+{
+  "name": "cow-rs-vector-gen",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "gen": "node generate-vectors.mjs"
+  },
+  "dependencies": {
+    "ethers": "^6.13.4"
+  },
+  "overrides": {
+    "ws": "^8.21.0"
+  }
+}

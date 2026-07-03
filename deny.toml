@@ -1,0 +1,60 @@
+# cargo-deny configuration for cow-rs.
+#
+# Run `cargo deny check` locally; CI gates this once the supply-chain
+# workflow lands. See https://embarkstudios.github.io/cargo-deny/ for the
+# schema.
+
+[graph]
+all-features = true
+
+[advisories]
+db-urls = ["https://github.com/rustsec/advisory-db"]
+yanked = "warn"
+# Unmaintained crates pulled in transitively (no direct dependency). Drop
+# entries once upstream alloy migrates off them.
+ignore = [
+    # paste: pulled via alloy-sol-macro-expander → syn-solidity.
+    "RUSTSEC-2024-0436",
+    # proc-macro-error2: pulled via alloy-sol-macro → alloy-sol-types.
+    "RUSTSEC-2026-0173",
+]
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "Zlib",
+    "MPL-2.0",
+    # webpki-roots ships Mozilla's CA bundle under CDLA-Permissive-2.0.
+    "CDLA-Permissive-2.0",
+    # The crate itself ships under GPL-3.0-or-later; flag the canonical
+    # forms cargo-metadata may surface for it.
+    "GPL-3.0-or-later",
+    "GPL-3.0",
+]
+confidence-threshold = 0.85
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Sources of churn we actively avoid; flag if a dep tries to reintroduce
+# them.
+deny = [
+    { name = "ethers" },
+    { name = "ethers-core" },
+    { name = "ethers-providers" },
+    { name = "ethers-signers" },
+    { name = "openssl" },
+    { name = "openssl-sys" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

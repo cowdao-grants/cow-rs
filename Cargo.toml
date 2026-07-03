@@ -1,0 +1,91 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/cowprotocol",
+    "crates/cowprotocol-appdata",
+    "crates/cowprotocol-orderbook",
+    "crates/cowprotocol-primitives",
+    "crates/cowprotocol-signing",
+    "crates/cow-sdk-wasm",
+    "tools/chain-probe",
+]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.91"
+license = "GPL-3.0-or-later"
+authors = ["cow-rs contributors"]
+repository = "https://github.com/cowdao-grants/cow-rs"
+readme = "README.md"
+
+[workspace.lints.rust]
+missing-debug-implementations = "warn"
+missing-docs = "warn"
+unreachable-pub = "warn"
+unused-must-use = "deny"
+rust-2018-idioms = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+missing-const-for-fn = "warn"
+use-self = "warn"
+option-if-let-else = "warn"
+redundant-clone = "warn"
+
+[workspace.dependencies]
+# default-features = false drops the serde/rlp integrations we do not
+# use; what remains is the NamedChain id registry, which builds for
+# wasm32 unchanged.
+alloy-chains = { version = "0.2", default-features = false }
+alloy-primitives = { version = "1.5.7", default-features = false, features = ["std", "serde", "k256"] }
+alloy-signer = { version = "1.8.3", default-features = false }
+alloy-signer-local = { version = "1.8.3", default-features = false }
+alloy-sol-types = { version = "1.5.7", default-features = false, features = ["std"] }
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_with = "3"
+cid = { version = "0.11", default-features = false, features = ["std"] }
+const-hex = "1"
+hex-literal = "1"
+# `cowprotocol` decodes responses via
+# `serde_json::from_str(response.text().await?)` rather than reqwest's
+# `Response::json::<T>()`. The `json` feature is still required here
+# because `RequestBuilder::json(&body)` (used by the orderbook +
+# subgraph POST paths) is gated behind the same feature on the request
+# side; dropping it would force every caller to hand-assemble the
+# `content-type: application/json` body.
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
+thiserror = "2"
+tokio = { version = "1", default-features = false }
+url = "2"
+# Pinned at 0.2 deliberately: alloy's k256 / elliptic-curve crypto path
+# pulls `rand_core 0.6`, which depends on `getrandom 0.2`. Bumping our
+# direct dep to 0.3 would not drop 0.2 from the wasm tree (rand_core
+# keeps it); it would only add a second copy. Revisit once alloy moves
+# its crypto stack to rand_core 0.9 / getrandom 0.3.
+getrandom = { version = "0.2", default-features = false }
+wiremock = "0.6"
+# wasm32 stack shared by the in-crate FetchTransport and the JS shim.
+js-sys = "0.3"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+
+[profile.release]
+# Size-focused for the wasm shim (which is the only artefact we
+# actually ship a binary of). Consumers building from crates.io use
+# their own profile, so these knobs only affect builds done IN this
+# workspace.
+#   lto = "fat"      cross-crate inlining; deletes more unreachable code
+#   opt-level = "z"  biases LLVM for binary size over runtime speed
+#   panic = "abort"  drops unwind tables; cdylib supports this
+#   strip = true     removes symbol names and debug info
+lto = "fat"
+codegen-units = 1
+opt-level = "z"
+panic = "abort"
+strip = true
+
+[workspace.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

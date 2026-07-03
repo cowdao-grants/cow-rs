@@ -1,0 +1,30 @@
+[package]
+name = "chain-probe"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "On-chain deployment-parity probe for cowprotocol singletons. Internal tooling, not published."
+publish = false
+
+[lints]
+workspace = true
+
+# This crate exists only to host the chain-deployment integration test
+# outside the published `cowprotocol` crate. The probe hits external
+# RPCs, runs under `#[ignore]` so default `cargo test` skips it, and is
+# triggered by `.github/workflows/chain-deployment.yml` on a weekly
+# cadence. Keeping it out of `cowprotocol/tests/` means the published
+# crate's tarball doesn't carry probe code that no consumer ever runs.
+
+[dependencies]
+cowprotocol = { path = "../../crates/cowprotocol", version = "0.2.0" }
+
+[dev-dependencies]
+alloy-primitives.workspace = true
+const-hex.workspace = true
+reqwest = { workspace = true, features = ["rustls-tls"] }
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
