@@ -1,6 +1,6 @@
 [package]
 name = "cowprotocol"
-version = "0.2.0"
+version = "0.2.0-alpha.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -36,10 +36,10 @@ http-client = ["cowprotocol-orderbook/http-client"]
 subgraph = ["http-client", "cowprotocol-orderbook/subgraph"]
 
 [dependencies]
-cowprotocol-appdata = { version = "0.2.0", path = "../cowprotocol-appdata" }
-cowprotocol-orderbook = { version = "0.2.0", path = "../cowprotocol-orderbook", default-features = false }
-cowprotocol-primitives = { version = "0.1.1", path = "../cowprotocol-primitives" }
-cowprotocol-signing = { version = "0.2.0", path = "../cowprotocol-signing" }
+cowprotocol-appdata = { version = "0.2.0-alpha.1", path = "../cowprotocol-appdata" }
+cowprotocol-orderbook = { version = "0.2.0-alpha.1", path = "../cowprotocol-orderbook", default-features = false }
+cowprotocol-primitives = { version = "0.1.1-alpha.1", path = "../cowprotocol-primitives" }
+cowprotocol-signing = { version = "0.2.0-alpha.1", path = "../cowprotocol-signing" }
 
 [dev-dependencies]
 alloy-primitives.workspace = true

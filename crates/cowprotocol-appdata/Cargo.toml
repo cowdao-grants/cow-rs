@@ -1,6 +1,6 @@
 [package]
 name = "cowprotocol-appdata"
-version = "0.2.0"
+version = "0.2.0-alpha.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -19,7 +19,7 @@ workspace = true
 [dependencies]
 alloy-primitives.workspace = true
 cid.workspace = true
-cowprotocol-primitives = { version = "0.1.0", path = "../cowprotocol-primitives" }
+cowprotocol-primitives = { version = "0.1.1-alpha.1", path = "../cowprotocol-primitives" }
 serde.workspace = true
 serde_json.workspace = true
 serde_with.workspace = true

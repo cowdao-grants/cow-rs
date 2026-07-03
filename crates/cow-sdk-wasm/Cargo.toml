@@ -1,6 +1,6 @@
 [package]
 name = "cow-sdk-wasm"
-version = "0.2.0"
+version = "0.2.0-alpha.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -33,7 +33,7 @@ in_shim_signing = ["dep:alloy-signer-local"]
 # transport, so `reqwest` is never linked into the wasm binary and the
 # shim ships no HTTP plumbing of its own. The subgraph GraphQL client
 # stays off.
-cowprotocol = { path = "../cowprotocol", version = "0.2.0", default-features = false, features = ["http-client"] }
+cowprotocol = { path = "../cowprotocol", version = "0.2.0-alpha.1", default-features = false, features = ["http-client"] }
 alloy-primitives.workspace = true
 alloy-signer-local = { workspace = true, optional = true }
 serde.workspace = true
@@ -63,7 +63,7 @@ js-sys.workspace = true
 # tests/browser.rs drives `SubgraphClient` over the stubbed fetch to
 # lock in subgraph-on-wasm; the shim's own bindings leave `subgraph`
 # off, so the release wasm binary never carries it.
-cowprotocol = { path = "../cowprotocol", version = "0.2.0", default-features = false, features = ["subgraph"] }
+cowprotocol = { path = "../cowprotocol", version = "0.2.0-alpha.1", default-features = false, features = ["subgraph"] }
 
 [package.metadata.wasm-pack.profile.release]
 # -Oz biases binaryen for binary size over speed (~30% smaller than

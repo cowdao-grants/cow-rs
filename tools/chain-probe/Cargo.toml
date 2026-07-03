@@ -20,7 +20,7 @@ workspace = true
 # crate's tarball doesn't carry probe code that no consumer ever runs.
 
 [dependencies]
-cowprotocol = { path = "../../crates/cowprotocol", version = "0.2.0" }
+cowprotocol = { path = "../../crates/cowprotocol", version = "0.2.0-alpha.1" }
 
 [dev-dependencies]
 alloy-primitives.workspace = true
