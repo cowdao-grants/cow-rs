@@ -49,8 +49,8 @@ pub use self::{
     eth_flow::{ETH_FLOW_PRODUCTION, ETH_FLOW_STAGING, EthFlowOrder},
     order_book::{
         AppDataDocument, Auction, AuctionStatus, AuctionStatusType, NativePrice, Order,
-        OrderBookApi, OrderCreation, OrderCreationBuilder, OrderQuote, OrderQuoteResponse,
-        OrderStatus, OrderSubmission, PriceQuality, QuoteAppData, QuoteRequest,
+        OrderBookApi, OrderCreation, OrderCreationAppData, OrderCreationBuilder, OrderQuote,
+        OrderQuoteResponse, OrderStatus, OrderSubmission, PriceQuality, QuoteAppData, QuoteRequest,
         QuoteRequestBuilder, QuotedOrder, ReadyQuoteRequestBuilder, TokenMetadata, TotalSurplus,
         Trade,
     },

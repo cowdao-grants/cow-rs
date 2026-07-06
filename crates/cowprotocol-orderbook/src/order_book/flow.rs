@@ -73,7 +73,7 @@ use crate::transport::HttpTransport;
 
 use super::api::OrderBookApi;
 use super::builder_state::{Missing, Set};
-use super::orders::OrderCreation;
+use super::orders::{OrderCreation, OrderCreationAppData};
 use super::quote::{OrderQuoteResponse, QuoteRequest};
 use super::types::{AppDataDocument, PriceQuality, QuoteAppData};
 
@@ -603,15 +603,18 @@ impl<T: HttpTransport + Clone> OrderSubmission<T> {
     /// The `PUT /api/v1/app_data/{hash}` runs first so there is no
     /// window where the order index carries the digest but not the
     /// document. The PUT is skipped when the digest is
-    /// [`EMPTY_APP_DATA_HASH`]: the orderbook universally knows the
-    /// empty document, so pinning it is a wasted round-trip.
+    /// [`EMPTY_APP_DATA_HASH`] (the orderbook universally knows the
+    /// empty document) and for hash-only bodies, which carry no
+    /// document to pin.
     pub async fn submit(&self) -> Result<OrderUid> {
-        if self.order.app_data_hash != EMPTY_APP_DATA_HASH {
+        if let OrderCreationAppData::Full { full, hash } = &self.order.app_data
+            && *hash != EMPTY_APP_DATA_HASH
+        {
             self.api
                 .put_app_data(
-                    &self.order.app_data_hash,
+                    hash,
                     &AppDataDocument {
-                        full_app_data: self.order.app_data.clone(),
+                        full_app_data: full.clone(),
                     },
                 )
                 .await?;
