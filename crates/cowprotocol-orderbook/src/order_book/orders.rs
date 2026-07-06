@@ -7,7 +7,7 @@
 use alloy_primitives::{Address, Bytes, U256};
 use serde::{Deserialize, Serialize};
 use serde_with::{DisplayFromStr, serde_as};
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::{
@@ -319,7 +319,13 @@ impl TryFrom<OrderCreationWire> for OrderCreation {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+/// System-clock reading for every target with a real clock API: native
+/// builds and WASI wasm32 (`SystemTime` is backed by WASI clocks
+/// there). Only browser wasm32 (`target_os = "unknown"`) must go via
+/// `js_sys::Date`; routing WASI through it instead would emit a
+/// wasm-bindgen import no non-JS runtime can satisfy, so the module
+/// would fail to instantiate.
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 fn current_epoch_seconds() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -327,7 +333,7 @@ fn current_epoch_seconds() -> u64 {
         .as_secs()
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 fn current_epoch_seconds() -> u64 {
     let millis = js_sys::Date::now();
     if millis.is_finite() && millis > 0.0 {
