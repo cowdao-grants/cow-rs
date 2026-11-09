@@ -1,4 +1,5 @@
 /target
+tools/conformance-gen/target
 **/*.rs.bk
 Cargo.lock.bak
 
@@ -20,6 +21,11 @@ Cargo.lock.bak
 # Node generator artefacts
 tools/vector-gen/node_modules
 tools/vector-gen/vectors.json
+
+# Conformance fixture is generated just-in-time from the pinned services
+# commit (tools/conformance-gen); it is not committed. Run the generator
+# before any test or CI step that reads it.
+crates/cowprotocol-signing/tests/fixtures/conformance_vectors.v1.json
 
 # Generated wasm-pack output. The dev harness writes to pkg/; release
 # builds for the web / bundler / nodejs targets land in pkg-web/,

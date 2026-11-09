@@ -9,6 +9,7 @@ members = [
     "crates/cow-sdk-wasm",
     "tools/chain-probe",
 ]
+exclude = ["tools/conformance-gen"]
 
 [workspace.package]
 edition = "2024"
