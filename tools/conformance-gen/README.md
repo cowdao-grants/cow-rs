@@ -1,79 +1,104 @@
 # conformance-gen
 
-Generates `crates/cowprotocol-signing/tests/fixtures/conformance_vectors.v1.json`
-from the order and signature code in `cowprotocol/services`.
-
-The services dependencies are pinned to commit
+Generates the signed-order fixture from services' `model` crate at
 `df6a14b12eab016f1ae939aa5b666658208b0bc0`.
+
+cow-rs's existing signed-order golden vectors come from `tools/vector-gen`,
+which computes them with ethers' `TypedDataEncoder`. This tool takes the same
+kind of values from services itself, the Rust implementation the orderbook runs.
+`vector-gen` records one order on ten chains, seven struct-hash permutations
+and one EIP-712 signature; this tool records 19 orders on mainnet, each with
+EIP-712 and EthSign signatures.
+`parity/source-lock.toml` still records an older services pin (`47af30fe`);
+this tool does not read it.
 
 ## Coverage
 
-The fixture contains 19 order vectors and 38 signing-scheme checks. The base
-matrix covers:
+The 19 orders cover all 12 combinations of order kind, sell-token source and
+buy-token destination, plus three receiver cases, two amount boundaries and two
+`validTo` boundaries. Each order is signed under EIP-712 and EthSign: 38
+signing-scheme checks in total. Changing the matrix means updating the case
+count in `src/main.rs` and `minItems`/`maxItems` in the schema.
 
-- `OrderKind`: Buy and Sell
-- `SellTokenSource`: Erc20, External and Internal
-- `BuyTokenDestination`: Erc20 and Internal
+The base order starts from the order in services' `compute_order_uid` test,
+which is also cow-rs's `sample_order()` and the `vector-gen` base order;
+only `validTo` and `appData` differ. Token addresses, app data, chain ID,
+settlement contract and signer are fixed. Every order sets `partiallyFillable`
+to false. The two amount boundary vectors set the sell, buy and fee amounts to
+the same boundary value. The absent and zero-address receiver cases produce the
+same hash, signatures and UID, because services encodes an absent receiver as
+the zero address. The non-zero fee is included in the order fields used for
+hashing and signing. These cases do not test orderbook acceptance. EIP-1271
+and presign are out of scope.
 
-Additional vectors cover absent, zero and nonzero receivers; amount values of
-1 and `U256::MAX`; and `validTo` values of 1 and `u32::MAX`. Each vector
-includes EIP-712 and EthSign results.
+## Format
 
-The matrix keeps the token addresses, app data, chain ID, settlement contract
-and signer fixed. All orders set `partially_fillable` to false. The two amount
-boundary vectors set the sell, buy and fee amounts to the same boundary value.
-EIP-1271 signatures, presignatures and orderbook acceptance are outside the
-scope of this fixture.
+The top-level fields are `schemaVersion`, `servicesSha`, `settlement`,
+`chainId`, `signer` and `vectors`. The fixture uses camelCase field names.
 
-The fixture records:
+Each vector is services' `OrderData`, flattened, with its domain separator,
+struct hash and UID. These results are named `domainSeparator`, `hashStruct`
+and `uid`. The vector's `id` names the case; in ids such as
+`sell_sb_external_bb_internal`, `sb` is the sell-token source
+(`sellTokenBalance`) and `bb` the buy-token destination (`buyTokenBalance`).
+`signatures` holds two expectations: one for EIP-712 and one for EthSign.
 
-- the order struct hash
-- EIP-712 and EthSign digests
-- signatures and recovered owners
-- the order UID
+Each expectation contains `signingScheme`, `signature` and `digest`.
+The first two fields come from services' `Signature`; `digest` comes from
+`Recovered::message`. The signature is a single `0x`-prefixed hex string
+encoding 65 bytes, not an object with separate `r`, `s` and `v` fields as in
+`vector-gen`.
 
-The schema is `conformance_vectors.v1.schema.json`. Each vector embeds
-`model::order::OrderData` directly (via `#[serde(flatten)]`), so its fields
-(`sellToken`, `buyAmount`, `kind`, ...) use `OrderData`'s own camelCase
-serialization; amounts are decimal strings and addresses are lowercase hex,
-both via `OrderData`'s own `Serialize` impl, not re-derived here. The
-generator's own fields (`domain_separator`, `hash_struct`, the two digests)
-stay snake_case since they aren't part of any existing DTO. Each signature is
-`model::signature::EcdsaSignature`'s own serialization: a single `0x`-prefixed
-65-byte hex string (`r` + `s` + `v`), not a separate `r`/`s`/`v` object.
+The top-level `signer` is the expected owner. The generator checks that both
+signatures of every vector recover to this address.
 
-The absent and zero-address receiver cases intentionally produce the same hash,
-signatures and UID because both encode as the zero address in `OrderData`.
+The schema,
+`crates/cowprotocol-signing/tests/fixtures/conformance_vectors.v1.schema.json`,
+defines the structure, not cryptographic validity. A consumer must recompute
+the struct hash, digests and UID from the order fields, recover the owner from
+each signature and compare it with `signer`.
+
+## Schema version
+
+After the first merge, incompatible changes to field names, required fields,
+types or structure require a new schema version. A change to calculated values
+alone does not necessarily change the format. `servicesSha` records which
+services implementation supplied those values.
+
+A version bump changes `SCHEMA_VERSION` and the schema's `schemaVersion`
+constant, and renames the `.v1.` files: the output path in `src/main.rs`, the
+schema file, the `.gitignore` entry and the paths in this README.
 
 ## Regeneration
 
-From the repository root:
+Run from the repository root:
 
-```bash
+```sh
 cargo run --locked --manifest-path tools/conformance-gen/Cargo.toml
 ```
 
-The first build requires Git and network access to fetch the pinned services
-repository and crates.io dependencies. After those dependencies are cached,
-the generator can run offline with `--offline`.
+The generated `crates/cowprotocol-signing/tests/fixtures/conformance_vectors.v1.json`
+is gitignored and not committed; regenerate it before anything reads it.
+Dependencies need network access on first build; cached builds can use
+`--offline`.
 
-The fixture is generated just-in-time from the services commit pinned in
-`Cargo.toml` and `src/main.rs`; it is **not committed**. `.gitignore` excludes
-`crates/cowprotocol-signing/tests/fixtures/conformance_vectors.v1.json`. Run
-the command above before any test or CI step that reads it, including the
-Milestone 2 consumer test, which is expected to invoke this generator (or a
-CI step that runs before it) rather than read a committed file. Only the
-hand-authored schema, `conformance_vectors.v1.schema.json`, is committed.
+To change the pin, update both `rev` values in the tool's `Cargo.toml`,
+`SERVICES_PIN` in `src/main.rs` and the revision at the top of this README.
+Refresh the tool's lockfile without `--locked`, then regenerate the fixture
+with `--locked`. Run the tool's formatting and Clippy checks, validate the
+fixture against the schema and review any changed values or serialisation.
+A pin change can change services' serialisation as well as its calculations.
 
-When changing the services revision, update both `rev` entries in `Cargo.toml`
-and `SERVICES_PIN` in `src/main.rs`, regenerate `Cargo.lock` without `--locked`,
-then run the locked command above to produce a fresh fixture locally.
+The lockfile is committed so that `--locked` reproduces the same dependency
+graph. The services crates in it resolve to the commit in `SERVICES_PIN`.
+That is checked by hand: the generator does not compare the lockfile with
+`SERVICES_PIN` or with the revision stated in this README. `--locked` stops
+resolution from changing the lockfile; it does not check those references,
+the documentation or security advisories.
 
-The generator is excluded from the root workspace because its native services
-dependencies do not compile for the workspace's `wasm32-unknown-unknown` CI
-target, and so that those dependencies never enter the root `Cargo.lock`
-(relevant to the un-committed fixture too: regenerating it never touches the
-root lockfile or dependency graph).
+The tool has its own lockfile and is excluded from the workspace to keep native
+services dependencies out of SDK/WASM builds. Run its formatting and Clippy
+checks separately using the same `--manifest-path`.
 
-No test consumes this fixture in Milestone 1. The consumer test is planned for
-Milestone 2.
+No test reads the fixture in Milestone 1. The cow-rs consumer test, the
+source-lock update and CI belong to Milestone 2.

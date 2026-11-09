@@ -994,7 +994,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-signer-local",
  "app-data",
- "hex-literal 1.1.0",
  "model",
  "serde",
  "serde_json",
@@ -1688,12 +1687,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6fe2267d4ed49bc07b63801559be28c718ea06c4738b7a03c94df7386d2cde46"
 
 [[package]]
-name = "hex-literal"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e712f64ec3850b98572bffac52e2c6f282b29fe6c5fa6d42334b30be438d95c1"
-
-[[package]]
 name = "hmac"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2002,7 +1995,7 @@ dependencies = [
  "chrono",
  "const-hex",
  "derive_more 1.0.0",
- "hex-literal 0.4.1",
+ "hex-literal",
  "num",
  "number",
  "serde",

@@ -2,26 +2,19 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "conformance_vectors.v1.schema.json",
   "title": "CoW signed-order conformance vectors v1",
+  "description": "Structure of the signed-order conformance fixture. Checks field presence, types, string formats and lengths, and the number of vectors. Does not verify that hashes, digests, signatures, recovered owners and UIDs are correct or consistent. The generator calculates the results; separate checks verify them.",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "schema_version",
-    "services_sha",
-    "settlement",
-    "chain_id",
-    "signer",
-    "order_vector_count",
-    "signing_scheme_check_count",
-    "vectors"
-  ],
+  "required": ["schemaVersion", "servicesSha", "settlement", "chainId", "signer", "vectors"],
   "properties": {
-    "schema_version": { "const": 1 },
-    "services_sha": { "$ref": "#/$defs/gitSha" },
+    "schemaVersion": { "const": 1 },
+    "servicesSha": { "$ref": "#/$defs/gitSha" },
     "settlement": { "$ref": "#/$defs/address" },
-    "chain_id": { "type": "integer", "minimum": 0 },
-    "signer": { "$ref": "#/$defs/address" },
-    "order_vector_count": { "const": 19 },
-    "signing_scheme_check_count": { "const": 38 },
+    "chainId": { "type": "integer", "minimum": 0 },
+    "signer": {
+      "description": "Expected owner of every order. The generator checks that both signatures of every vector recover to this address; this schema checks only the address format.",
+      "$ref": "#/$defs/address"
+    },
     "vectors": {
       "type": "array",
       "minItems": 19,
@@ -30,29 +23,12 @@
     }
   },
   "$defs": {
-    "gitSha": {
-      "type": "string",
-      "pattern": "^[0-9a-f]{40}$"
-    },
-    "address": {
-      "type": "string",
-      "pattern": "^0x[0-9a-f]{40}$"
-    },
-    "bytes32": {
-      "type": "string",
-      "pattern": "^0x[0-9a-f]{64}$"
-    },
-    "decimal": {
-      "type": "string",
-      "pattern": "^(0|[1-9][0-9]*)$",
-      "maxLength": 78
-    },
-    "ecdsaSignature": {
-      "description": "r (32 bytes) + s (32 bytes) + v (1 byte), as model::signature::EcdsaSignature serializes it.",
-      "type": "string",
-      "pattern": "^0x[0-9a-f]{130}$"
-    },
+    "gitSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "address": { "type": "string", "pattern": "^0x[0-9a-f]{40}$" },
+    "bytes32": { "type": "string", "pattern": "^0x[0-9a-f]{64}$" },
+    "decimal": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$", "maxLength": 78 },
     "vector": {
+      "description": "A model::order::OrderData, flattened as services serialises it, plus its expected values.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -69,51 +45,67 @@
         "partiallyFillable",
         "sellTokenBalance",
         "buyTokenBalance",
-        "domain_separator",
-        "hash_struct",
-        "eip712_digest",
-        "ethsign_digest",
-        "eip712_signature",
-        "eip712_recovered_owner",
-        "ethsign_signature",
-        "ethsign_recovered_owner",
-        "uid"
+        "domainSeparator",
+        "hashStruct",
+        "uid",
+        "signatures"
       ],
       "properties": {
         "id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
         "sellToken": { "$ref": "#/$defs/address" },
         "buyToken": { "$ref": "#/$defs/address" },
-        "receiver": {
-          "oneOf": [
-            { "$ref": "#/$defs/address" },
-            { "type": "null" }
-          ]
-        },
+        "receiver": { "oneOf": [{ "$ref": "#/$defs/address" }, { "type": "null" }] },
         "sellAmount": { "$ref": "#/$defs/decimal" },
         "buyAmount": { "$ref": "#/$defs/decimal" },
-        "validTo": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 4294967295
-        },
+        "validTo": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
         "appData": { "$ref": "#/$defs/bytes32" },
         "feeAmount": { "$ref": "#/$defs/decimal" },
         "kind": { "enum": ["buy", "sell"] },
         "partiallyFillable": { "type": "boolean" },
         "sellTokenBalance": { "enum": ["erc20", "external", "internal"] },
         "buyTokenBalance": { "enum": ["erc20", "internal"] },
-        "domain_separator": { "$ref": "#/$defs/bytes32" },
-        "hash_struct": { "$ref": "#/$defs/bytes32" },
-        "eip712_digest": { "$ref": "#/$defs/bytes32" },
-        "ethsign_digest": { "$ref": "#/$defs/bytes32" },
-        "eip712_signature": { "$ref": "#/$defs/ecdsaSignature" },
-        "eip712_recovered_owner": { "$ref": "#/$defs/address" },
-        "ethsign_signature": { "$ref": "#/$defs/ecdsaSignature" },
-        "ethsign_recovered_owner": { "$ref": "#/$defs/address" },
-        "uid": {
-          "type": "string",
-          "pattern": "^0x[0-9a-f]{112}$"
+        "domainSeparator": { "$ref": "#/$defs/bytes32" },
+        "hashStruct": { "$ref": "#/$defs/bytes32" },
+        "uid": { "type": "string", "pattern": "^0x[0-9a-f]{112}$" },
+        "signatures": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "$ref": "#/$defs/signingExpectation" },
+          "allOf": [
+            {
+              "contains": {
+                "required": ["signingScheme"],
+                "properties": { "signingScheme": { "const": "eip712" } }
+              },
+              "minContains": 1,
+              "maxContains": 1
+            },
+            {
+              "contains": {
+                "required": ["signingScheme"],
+                "properties": { "signingScheme": { "const": "ethsign" } }
+              },
+              "minContains": 1,
+              "maxContains": 1
+            }
+          ]
         }
+      }
+    },
+    "signingExpectation": {
+      "description": "A model::signature::Signature, flattened as services serialises it (signingScheme, signature), plus the digest it signs.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["signingScheme", "signature", "digest"],
+      "properties": {
+        "signingScheme": { "enum": ["eip712", "ethsign"] },
+        "signature": {
+          "description": "65 bytes: r (32) + s (32) + v (1).",
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{130}$"
+        },
+        "digest": { "$ref": "#/$defs/bytes32" }
       }
     }
   }

@@ -1,5 +1,9 @@
+# Excluded from the root workspace, so these fields cannot be inherited from
+# `[workspace.package]`; keep them in step with it.
+
 [package]
 name = "conformance-gen"
+# Version of this tool, independent of `SCHEMA_VERSION` in `src/main.rs`.
 version = "0.0.0"
 edition = "2024"
 rust-version = "1.91"
@@ -10,10 +14,13 @@ description = "Generates signed-order conformance fixtures from a pinned service
 publish = false
 
 [dependencies]
+# Same services commit for both, so shared types such as `AppDataHash` match.
+# `app-data` is listed because `main.rs` imports it; `model`'s copy is not
+# importable here. Must equal `SERVICES_PIN` in `src/main.rs`; see the README.
 model = { git = "https://github.com/cowprotocol/services.git", rev = "df6a14b12eab016f1ae939aa5b666658208b0bc0", package = "model" }
 app-data = { git = "https://github.com/cowprotocol/services.git", rev = "df6a14b12eab016f1ae939aa5b666658208b0bc0", package = "app-data" }
 alloy-primitives = "1.7.3"
+# Must resolve to the same version `model` uses, so the signer types match.
 alloy-signer-local = "1.8.3"
-hex-literal = "1.1.0"
 serde = { version = "1.0.203", features = ["derive"] }
 serde_json = "1.0.117"
