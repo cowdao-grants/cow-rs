@@ -1,0 +1,28 @@
+[package]
+name = "cowprotocol-primitives"
+version = "0.1.1"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme.workspace = true
+description = "Primitive CoW Protocol chain, domain, order, and contract types."
+homepage = "https://github.com/cowdao-grants/cow-rs"
+documentation = "https://docs.rs/cowprotocol-primitives"
+keywords = ["cow-protocol", "ethereum", "defi", "alloy"]
+categories = ["cryptography::cryptocurrencies", "data-structures"]
+
+[lints]
+workspace = true
+
+[dependencies]
+alloy-chains.workspace = true
+alloy-primitives.workspace = true
+alloy-sol-types.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

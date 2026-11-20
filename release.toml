@@ -1,0 +1,32 @@
+# cargo-release configuration for the cow-rs workspace.
+#
+# Drives `cargo release` against the published `cowprotocol` crate;
+# `cow-sdk-wasm` is `publish = false` in its Cargo.toml and is skipped
+# by cargo-release automatically. Versions stay in lockstep
+# (`shared-version = true`) so the npm shim's version always tracks the
+# corresponding `cowprotocol` release.
+#
+# Modelled on nexum's per-area release.toml. See:
+#   https://github.com/crate-ci/cargo-release/blob/master/docs/reference.md
+
+allow-branch = ["main"]
+shared-version = true
+publish = true
+push = true
+
+sign-commit = true
+sign-tag = true
+
+tag-prefix = ""
+tag-name = "v{{version}}"
+tag-message = "Release {{version}}"
+pre-release-commit-message = "chore: release {{version}}"
+
+# Regenerates CHANGELOG.md from git-cliff against the new tag and
+# stages it so the release commit captures it. The script is
+# committed at scripts/changelog.sh; bumps to the cliff template
+# require touching that file, not this one.
+pre-release-hook = ["bash", "-c", "$WORKSPACE_ROOT/scripts/changelog.sh --tag v{{version}}"]
+
+# crates.io rate-limits new versions; this matches nexum's setting.
+rate-limit.existing-packages = 50

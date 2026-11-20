@@ -1,0 +1,266 @@
+name: ci
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-Dwarnings"
+  RUST_BACKTRACE: short
+
+jobs:
+  rustfmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master 2026-04
+        with:
+          toolchain: "1.91.1"
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master 2026-04
+        with:
+          toolchain: "1.91.1"
+          components: clippy
+      - uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+      - run: cargo clippy --workspace --all-targets -- -Dwarnings
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master 2026-04
+        with:
+          toolchain: "1.91.1"
+      - uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+      - run: cargo test --workspace --all-targets
+      - run: cargo test --workspace --doc
+
+  msrv:
+    name: msrv
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master 2026-04
+        with:
+          toolchain: "1.91"
+      - uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+      - run: cargo build --workspace --all-targets
+
+  wasm:
+    name: wasm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master 2026-04
+        with:
+          toolchain: "1.91.1"
+          targets: wasm32-unknown-unknown
+          components: clippy
+      - uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+      - run: cargo check --workspace --all-features --target wasm32-unknown-unknown
+      # The meta crate must also build hashing/signing-only (no
+      # http-client, no transports) on wasm32.
+      - run: cargo check -p cowprotocol --no-default-features --target wasm32-unknown-unknown
+      - run: cargo clippy -p cowprotocol -p cowprotocol-orderbook --all-features --target wasm32-unknown-unknown -- -Dwarnings
+      - name: Assert reqwest stays out of the wasm32 cowprotocol graph
+        # The `http-client` feature must resolve to FetchTransport on
+        # wasm32; reqwest re-entering the graph would silently bloat
+        # the shim and re-introduce a native HTTP stack in browsers.
+        run: |
+          tree="$(cargo tree -p cowprotocol --all-features --target wasm32-unknown-unknown -e normal)"
+          if grep -q 'reqwest v' <<<"$tree"; then
+            echo '::error::reqwest leaked into the wasm32 cowprotocol dependency graph'
+            exit 1
+          fi
+
+  wasm-size:
+    name: wasm-size
+    runs-on: ubuntu-latest
+    # Fail-loud guardrail: if a future commit re-pulls reqwest (or any
+    # other 100+ KB dependency) into the wasm graph, the size jumps and
+    # this job blocks the merge. Bump the ceiling consciously when API
+    # surface growth justifies it.
+    env:
+      # Avoid `-Dwarnings` here -- the upstream `wasm-bindgen` JS glue
+      # has warnings under the workspace's strict lint set that would
+      # otherwise fail the release build.
+      RUSTFLAGS: ""
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master 2026-04
+        with:
+          toolchain: "1.91.1"
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+        with:
+          key: wasm-size
+      # Pinned: bump deliberately. An implicit `latest` resolution lets
+      # a future hostile `wasm-pack` release (or one of its build deps)
+      # run arbitrary code on every CI job.
+      - run: cargo install --locked --version 0.14.0 wasm-pack
+      - name: Build cow-sdk-wasm release (web target)
+        run: |
+          cd crates/cow-sdk-wasm
+          wasm-pack build --target web --release --out-dir pkg-web
+      - name: Assert .wasm size under ceiling
+        # 786432 bytes = 768 KB; current integrated build is 752626 bytes
+        # (~736 KB), leaving ~33 KB of headroom.
+        run: bash scripts/wasm-size-check.sh 786432
+
+  wasm-test:
+    name: wasm-test
+    runs-on: ubuntu-latest
+    # Runs `#[wasm_bindgen_test]` tests in a real headless Firefox via
+    # wasm-pack. Catches JS-marshalling and transport regressions that
+    # `cargo test --target wasm32` cannot see (the unit suite runs on
+    # the host, not in the browser runtime).
+    #
+    # `RUSTFLAGS=""` because the upstream wasm-bindgen JS glue carries
+    # warnings under our strict workspace lint set, and we don't want
+    # the deny-warnings flag from the global env to fail the build.
+    env:
+      RUSTFLAGS: ""
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master 2026-04
+        with:
+          toolchain: "1.91.1"
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+        with:
+          key: wasm-test
+      # Pinned: bump deliberately. An implicit `latest` resolution lets
+      # a future hostile `wasm-pack` release (or one of its build deps)
+      # run arbitrary code on every CI job.
+      - run: cargo install --locked --version 0.14.0 wasm-pack
+      - name: Headless browser test
+        # Firefox is preinstalled on ubuntu-latest; wasm-pack installs
+        # geckodriver on first run.
+        run: wasm-pack test --headless --firefox crates/cow-sdk-wasm
+
+  wasm-test-signing:
+    name: wasm-test (in_shim_signing)
+    runs-on: ubuntu-latest
+    # Second wasm-pack-test run with `--features in_shim_signing` so the
+    # private-key-in-wasm signing path is gated on every push. The
+    # default-features job (above) covers the slim build.
+    env:
+      RUSTFLAGS: ""
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master 2026-04
+        with:
+          toolchain: "1.91.1"
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+        with:
+          key: wasm-test-signing
+      # Pinned: bump deliberately. An implicit `latest` resolution lets
+      # a future hostile `wasm-pack` release (or one of its build deps)
+      # run arbitrary code on every CI job.
+      - run: cargo install --locked --version 0.14.0 wasm-pack
+      - name: Headless browser test (in_shim_signing)
+        # `cd` into the crate so wasm-pack does not need a positional
+        # PATH arg. Passing both `--features X` and `crates/cow-sdk-wasm`
+        # on the same line confuses wasm-pack 0.14's arg parser and it
+        # walks up to the workspace Cargo.toml (which has no [package]).
+        run: cd crates/cow-sdk-wasm && wasm-pack test --headless --firefox --features in_shim_signing
+
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: "-D warnings"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master 2026-04
+        with:
+          toolchain: "1.91.1"
+      - uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+      - run: cargo doc --workspace --all-features --no-deps
+
+  deny:
+    name: deny
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: ""
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master 2026-04
+        with:
+          toolchain: "1.91.1"
+      - uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+        with:
+          key: deny
+      # Pinned: bump deliberately. See the wasm-pack install above.
+      - run: cargo install --locked --version 0.19.6 cargo-deny
+      - run: cargo deny check
+
+  semver-checks:
+    name: semver-checks
+    runs-on: ubuntu-latest
+    # Gates against accidental SemVer breakage on the published
+    # `cowprotocol` crate. Blocking now that 0.1.0 establishes a
+    # crates.io baseline; cargo-semver-checks applies Cargo's 0.x rules
+    # (breaking changes require a minor bump).
+    env:
+      RUSTFLAGS: ""
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master 2026-04
+        with:
+          toolchain: "1.91.1"
+      - uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+        with:
+          key: semver-checks
+      # Pinned to a full commit SHA (resolves the `v2` tag) so a retargeted
+      # tag or a compromised maintainer account cannot inject code into CI.
+      - uses: obi1kenobi/cargo-semver-checks-action@6b69fcf40e9b5fb17adeb57e4b6ecd020649a239 # v2
+        with:
+          package: cowprotocol
+
+  ci-success:
+    name: ci-success
+    # Aggregator job: single status check for branch protection so the
+    # required-check list does not need to change every time a job is
+    # added or renamed.
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - rustfmt
+      - clippy
+      - test
+      - msrv
+      - wasm
+      - wasm-size
+      - wasm-test
+      - wasm-test-signing
+      - docs
+      - deny
+      - semver-checks
+    steps:
+      - name: Verify all required jobs succeeded
+        run: |
+          results="${{ join(needs.*.result, ' ') }}"
+          echo "needs.*.result: $results"
+          for r in $results; do
+            if [ "$r" != "success" ]; then
+              echo "::error::At least one required job did not succeed (saw '$r')"
+              exit 1
+            fi
+          done

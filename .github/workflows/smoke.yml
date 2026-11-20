@@ -1,0 +1,45 @@
+name: smoke
+
+# Hits the real api.cow.fi. Lives in its own workflow so transient
+# orderbook outages do not block PRs. Runs:
+#
+# - Manually via the Actions UI (`workflow_dispatch`)
+# - Daily at 12:00 UTC, so a schema drift at api.cow.fi surfaces
+#   within a day rather than at the next dep bump
+#
+# These tests deserialise the live response into cowprotocol's typed
+# `OrderQuoteResponse`, so a breaking rename on the orderbook side
+# fails here loudly. They are `#[ignore]`-gated and never run under
+# the standard `cargo test` invocation.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 12 * * *"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: short
+
+jobs:
+  live-orderbook:
+    name: live api.cow.fi smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master 2026-04
+        with:
+          toolchain: "1.91.1"
+      - uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+        with:
+          key: smoke
+      - name: Run live_smoke tests
+        # `--ignored` flips the inverse of the default; only the live
+        # tests run, no other `cargo test` work happens here. `-p` is
+        # needed because the workspace has multiple test targets named
+        # at the workspace root and cargo will not disambiguate without
+        # it.
+        run: cargo test -p cowprotocol --test live_smoke -- --ignored
