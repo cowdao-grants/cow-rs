@@ -17,8 +17,8 @@ ignore = [
     "RUSTSEC-2024-0436",
     # proc-macro-error2: pulled via alloy-sol-macro → alloy-sol-types.
     "RUSTSEC-2026-0173",
-    # alloy-signer -> elliptic-curve 0.13 requires crypto-bigint 0.5.
-    # The timing fix needs crypto-bigint >=0.7.6.
+    # crypto-bigint: pulled via alloy-signer → elliptic-curve 0.13, which
+    # needs 0.5. The timing fix needs >=0.7.6.
     "RUSTSEC-2026-0387",
 ]
 
