@@ -45,4 +45,7 @@ jobs:
       # fix yet; mirrored in deny.toml. Drop once alloy migrates.
       #   RUSTSEC-2024-0436: paste unmaintained (via alloy-sol-macro-expander)
       #   RUSTSEC-2026-0173: proc-macro-error2 unmaintained (via alloy-sol-macro)
-      - run: cargo audit --deny warnings --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2026-0173
+      #   RUSTSEC-2026-0387: crypto-bigint 0.5 timing issue (via alloy-signer)
+      #   RUSTSEC-2026-0543: chrono unmaintained; in Cargo.lock, unused by
+      #   the current workspace.
+      - run: cargo audit --deny warnings --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2026-0173 --ignore RUSTSEC-2026-0387 --ignore RUSTSEC-2026-0543

@@ -10,13 +10,16 @@ all-features = true
 [advisories]
 db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "warn"
-# Unmaintained crates pulled in transitively (no direct dependency). Drop
+# Advisories in crates pulled in transitively (no direct dependency). Drop
 # entries once upstream alloy migrates off them.
 ignore = [
     # paste: pulled via alloy-sol-macro-expander → syn-solidity.
     "RUSTSEC-2024-0436",
     # proc-macro-error2: pulled via alloy-sol-macro → alloy-sol-types.
     "RUSTSEC-2026-0173",
+    # crypto-bigint: pulled via alloy-signer → elliptic-curve 0.13, which
+    # needs 0.5. The timing fix needs >=0.7.6.
+    "RUSTSEC-2026-0387",
 ]
 
 [licenses]
