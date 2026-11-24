@@ -66,13 +66,12 @@ producers = [
 name = "services"
 repo = "cowprotocol/services"
 url = "https://github.com/cowprotocol/services"
-sha = "47af30fe6914b3f27f4f3622171d038bcc8e6131"
+sha = "df6a14b12eab016f1ae939aa5b666658208b0bc0"
 why = "Server-side Rust. Settlement-facing OrderUid packing and model::order::OrderData definitions."
 producers = [
-    "crates/contracts/src/gpv2_order.rs",
     "crates/model/src/order.rs",
     "crates/model/src/signature.rs",
-    "crates/app-data-hash/src/lib.rs",
+    "crates/app-data/src/app_data_hash.rs",
     "crates/shared/src/order_validation.rs",
 ]
 

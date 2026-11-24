@@ -352,7 +352,8 @@ cow-rs locks byte-exact equivalence on every protocol-critical path:
 - ethers `TypedDataEncoder` for all ten chains: signed UID, struct
   hash, domain separator, six order-shape permutations
 - `cowprotocol/services` for signature recovery and cancellation
-  struct hashes
+  struct hashes, and for 19 mainnet orders signed under EIP-712 and
+  EthSign ([`tools/conformance-gen`](./tools/conformance-gen/README.md))
 - `cowprotocol/contracts` for the canonical `TYPE_HASH` derivation,
   `packOrderUidParams` layout, and event topic hashes
 - ethers `Wallet.signTypedData` for the ECDSA `(r, s, v)` golden
@@ -401,6 +402,7 @@ crates/cowprotocol/examples/       # get_quote.rs, post_order.rs
 crates/cow-sdk-wasm/           # #[wasm_bindgen] shim driving the in-browser harness (unpublished)
 test-harness/                 # Static HTML harness; `just wasm-harness` to run
 tools/vector-gen/             # Node.js golden-vector generator (ethers reference)
+tools/conformance-gen/        # Rust signed-order vector generator (services reference)
 ```
 
 ## Contributing
