@@ -66,8 +66,8 @@ implementation supplied those values.
 
 A version bump changes `SCHEMA_VERSION`, the schema's `schemaVersion` constant
 and the version the test expects, and renames the `.v1.` files: the output path
-in `src/main.rs`, the test's fixture path, the schema file, the `.gitignore`
-entry and the paths in this README.
+in `src/main.rs`, the test's fixture path, the schema file and its `$id`, the
+`.gitignore` entry and the paths in this README.
 
 ## Regeneration
 
