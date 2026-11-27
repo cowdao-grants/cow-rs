@@ -7,7 +7,7 @@
 use alloy_primitives::{Address, Bytes, U256};
 use serde::{Deserialize, Serialize};
 use serde_with::{DisplayFromStr, serde_as};
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::{
@@ -109,6 +109,65 @@ pub struct Order {
     pub settlement_contract: Option<Address>,
 }
 
+/// `appData` submission shape carried by an [`OrderCreation`]: the
+/// canonical JSON document with its digest, or the bare 32-byte digest
+/// when the document is already registered with the orderbook. Mirrors
+/// `OrderCreationAppData` in `cowprotocol/services::model::order`.
+///
+/// Serialised flattened into the order body. The `Full` variant emits
+/// both `appData` (the JSON document) and `appDataHash`; the `Hash`
+/// variant emits `appData` as the `0x`-prefixed digest and omits
+/// `appDataHash` entirely. The omission is load-bearing: the orderbook's
+/// untagged decoder reads a body carrying both a digest-valued `appData`
+/// and an `appDataHash` as the full-document shape, and then rejects it
+/// because the digest of the hex text never matches the declared hash.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum OrderCreationAppData {
+    /// Canonical JSON document plus its declared `keccak256` digest.
+    ///
+    /// Listed before `Hash` on purpose: untagged deserialisation takes
+    /// the first matching variant, and a body with both fields must
+    /// resolve to `Full` so the digest expectation is validated.
+    Full {
+        /// Canonical JSON of the app-data document.
+        #[serde(rename = "appData")]
+        full: String,
+        /// `keccak256(full)`. Mirrors the signed payload's `app_data`.
+        #[serde(rename = "appDataHash")]
+        hash: AppDataHash,
+    },
+    /// Bare digest; the orderbook joins its pre-registered document.
+    Hash {
+        /// The signed `app_data` digest, hex-encoded on the wire.
+        #[serde(rename = "appData")]
+        hash: AppDataHash,
+    },
+}
+
+impl OrderCreationAppData {
+    /// The signed `app_data` digest, regardless of shape.
+    pub const fn hash(&self) -> AppDataHash {
+        match self {
+            Self::Full { hash, .. } | Self::Hash { hash } => *hash,
+        }
+    }
+
+    /// Canonical JSON document, when this shape carries one.
+    pub fn full(&self) -> Option<&str> {
+        match self {
+            Self::Full { full, .. } => Some(full),
+            Self::Hash { .. } => None,
+        }
+    }
+}
+
+impl From<AppDataHash> for OrderCreationAppData {
+    fn from(hash: AppDataHash) -> Self {
+        Self::Hash { hash }
+    }
+}
+
 /// Body of `POST /api/v1/orders`.
 ///
 /// Differs from a raw [`OrderData`] in three load-bearing ways
@@ -116,9 +175,9 @@ pub struct Order {
 ///
 /// - `fee_amount` here is what the user signed (which must be `0`); the
 ///   protocol fee is taken from surplus at settlement.
-/// - `app_data` is the canonical JSON string of the metadata document;
-///   `app_data_hash` is the `keccak256` digest of those exact bytes. The
-///   signed [`OrderData::app_data`] field equals `app_data_hash`.
+/// - `app_data` carries the metadata document shape
+///   ([`OrderCreationAppData`]); its digest equals the signed
+///   [`OrderData::app_data`] field.
 /// - `signing_scheme`, `signature` and `from` carry the owner's signature
 ///   along with the order.
 ///
@@ -127,6 +186,8 @@ pub struct Order {
 /// when it helps to name each field explicitly (IDE completion, WASM
 /// callers, or setting the optional `quote_id` conditionally). Both
 /// enforce the same invariants and normalise the receiver identically.
+/// [`Self::new_app_data_hash_only`] submits the signed digest without
+/// the document, for orders whose app-data is already registered.
 #[serde_as]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", try_from = "OrderCreationWire")]
@@ -146,10 +207,9 @@ pub struct OrderCreation {
     pub buy_amount: U256,
     /// Order expiry in Unix seconds.
     pub valid_to: u32,
-    /// Canonical JSON of the app-data document.
-    pub app_data: String,
-    /// `keccak256(app_data)`. Mirrors the signed payload's `app_data` field.
-    pub app_data_hash: AppDataHash,
+    /// App-data shape: canonical JSON with its digest, or digest only.
+    #[serde(flatten)]
+    pub app_data: OrderCreationAppData,
     /// User-signed fee amount. Must be `"0"` at submission.
     #[serde_as(as = "DisplayFromStr")]
     pub fee_amount: U256,
@@ -206,8 +266,8 @@ struct OrderCreationWire {
     #[serde_as(as = "DisplayFromStr")]
     buy_amount: U256,
     valid_to: u32,
-    app_data: String,
-    app_data_hash: AppDataHash,
+    #[serde(flatten)]
+    app_data: OrderCreationAppData,
     #[serde_as(as = "DisplayFromStr")]
     fee_amount: U256,
     kind: OrderKind,
@@ -227,10 +287,11 @@ impl TryFrom<OrderCreationWire> for OrderCreation {
     /// Reassemble an [`OrderCreation`] from its wire form, applying the
     /// same invariants [`OrderCreation::new`] enforces on the construction
     /// path: the signature payload must parse for the
-    /// declared scheme, `from` must be non-zero, and
-    /// `keccak256(app_data) == app_data_hash`. Without the digest check, a
-    /// hostile orderbook (or any intermediary) could hand the SDK a body
-    /// whose JSON document disagrees with the hash the user signed.
+    /// declared scheme, `from` must be non-zero, and - for the
+    /// full-document shape - `keccak256(app_data) == app_data_hash`.
+    /// Without the digest check, a hostile orderbook (or any
+    /// intermediary) could hand the SDK a body whose JSON document
+    /// disagrees with the hash the user signed.
     fn try_from(wire: OrderCreationWire) -> std::result::Result<Self, Self::Error> {
         let signature = Signature::from_bytes(wire.signing_scheme, &wire.signature)?;
         let order_data = OrderData {
@@ -240,24 +301,31 @@ impl TryFrom<OrderCreationWire> for OrderCreation {
             sell_amount: wire.sell_amount,
             buy_amount: wire.buy_amount,
             valid_to: wire.valid_to,
-            app_data: wire.app_data_hash,
+            app_data: wire.app_data.hash(),
             fee_amount: wire.fee_amount,
             kind: wire.kind,
             partially_fillable: wire.partially_fillable,
             sell_token_balance: wire.sell_token_balance,
             buy_token_balance: wire.buy_token_balance,
         };
-        Self::new(
-            &order_data,
-            signature,
-            wire.from,
-            wire.app_data,
-            wire.quote_id,
-        )
+        match wire.app_data {
+            OrderCreationAppData::Full { full, .. } => {
+                Self::new(&order_data, signature, wire.from, full, wire.quote_id)
+            }
+            OrderCreationAppData::Hash { .. } => {
+                Self::new_app_data_hash_only(&order_data, signature, wire.from, wire.quote_id)
+            }
+        }
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+/// System-clock reading for every target with a real clock API: native
+/// builds and WASI wasm32 (`SystemTime` is backed by WASI clocks
+/// there). Only browser wasm32 (`target_os = "unknown"`) must go via
+/// `js_sys::Date`; routing WASI through it instead would emit a
+/// wasm-bindgen import no non-JS runtime can satisfy, so the module
+/// would fail to instantiate.
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 fn current_epoch_seconds() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -265,7 +333,7 @@ fn current_epoch_seconds() -> u64 {
         .as_secs()
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 fn current_epoch_seconds() -> u64 {
     let millis = js_sys::Date::now();
     if millis.is_finite() && millis > 0.0 {
@@ -315,7 +383,7 @@ impl OrderCreation {
             sell_amount: self.sell_amount,
             buy_amount: self.buy_amount,
             valid_to: self.valid_to,
-            app_data: self.app_data_hash,
+            app_data: self.app_data.hash(),
             fee_amount: self.fee_amount,
             kind: self.kind,
             partially_fillable: self.partially_fillable,
@@ -411,14 +479,15 @@ impl OrderCreation {
         quote_id: Option<i64>,
         max_horizon_secs: u64,
     ) -> Result<Self> {
+        // Fail on the owner before the document so the error precedence
+        // of the pre-split constructor is preserved; `assemble` re-checks
+        // as the invariant's single home.
         if from == Address::ZERO {
             return Err(Error::OrderCreationInvalid {
                 field: "from",
                 reason: "owner address must be non-zero",
             });
         }
-        let signing_scheme = signature.scheme();
-        validate_valid_to_max_horizon(order_data.valid_to, signing_scheme, max_horizon_secs)?;
         // The JSON document MUST hash to the digest the order was signed
         // against. Otherwise a wrapper layer can bind the user's
         // signature to bytes the orderbook never sees, while pinning a
@@ -430,6 +499,68 @@ impl OrderCreation {
                 reason: "JSON digest does not match signed app_data hash",
             });
         }
+        Self::assemble(
+            order_data,
+            signature,
+            from,
+            OrderCreationAppData::Full {
+                full: app_data_json,
+                hash: order_data.app_data,
+            },
+            quote_id,
+            max_horizon_secs,
+        )
+    }
+
+    /// Hash-only sibling of [`Self::new`]: submit the signed `app_data`
+    /// digest verbatim, without the JSON document. The orderbook joins
+    /// the document it already has registered for that digest and
+    /// rejects the order otherwise (`INVALID_APP_DATA`), so this shape
+    /// suits relayers - watch-tower style - that never hold the
+    /// document text.
+    ///
+    /// Runs the same `from` and `valid_to` validation as [`Self::new`];
+    /// the digest-match check does not apply because the digest is
+    /// taken from the signed payload itself.
+    pub fn new_app_data_hash_only(
+        order_data: &OrderData,
+        signature: Signature,
+        from: Address,
+        quote_id: Option<i64>,
+    ) -> Result<Self> {
+        Self::assemble(
+            order_data,
+            signature,
+            from,
+            OrderCreationAppData::Hash {
+                hash: order_data.app_data,
+            },
+            quote_id,
+            DEFAULT_ORDER_VALID_TO_MAX_HORIZON_SECS,
+        )
+    }
+
+    /// Shared validation-and-assembly tail of the public constructors.
+    /// `app_data` must already agree with `order_data.app_data`; both
+    /// public paths derive it from the signed digest, so the invariant
+    /// holds by construction.
+    fn assemble(
+        order_data: &OrderData,
+        signature: Signature,
+        from: Address,
+        app_data: OrderCreationAppData,
+        quote_id: Option<i64>,
+        max_horizon_secs: u64,
+    ) -> Result<Self> {
+        if from == Address::ZERO {
+            return Err(Error::OrderCreationInvalid {
+                field: "from",
+                reason: "owner address must be non-zero",
+            });
+        }
+        let signing_scheme = signature.scheme();
+        validate_valid_to_max_horizon(order_data.valid_to, signing_scheme, max_horizon_secs)?;
+        debug_assert_eq!(app_data.hash(), order_data.app_data);
         // `Some(Address::ZERO)` and `None` mean the same thing (use owner)
         // but cow-sdk and cow-py emit `None` on the wire. Normalise so the
         // wire payload, signed hash and contract decoding always agree.
@@ -444,8 +575,7 @@ impl OrderCreation {
             sell_amount: order_data.sell_amount,
             buy_amount: order_data.buy_amount,
             valid_to: order_data.valid_to,
-            app_data: app_data_json,
-            app_data_hash: order_data.app_data,
+            app_data,
             fee_amount: order_data.fee_amount,
             kind: order_data.kind,
             partially_fillable: order_data.partially_fillable,
@@ -674,8 +804,10 @@ mod tests {
             sell_amount: U256::ZERO,
             buy_amount: U256::ZERO,
             valid_to: 0,
-            app_data: EMPTY_APP_DATA_JSON.to_owned(),
-            app_data_hash: EMPTY_APP_DATA_HASH,
+            app_data: OrderCreationAppData::Full {
+                full: EMPTY_APP_DATA_JSON.to_owned(),
+                hash: EMPTY_APP_DATA_HASH,
+            },
             fee_amount: U256::ZERO,
             kind: OrderKind::Sell,
             partially_fillable: false,
@@ -774,8 +906,10 @@ mod tests {
             sell_amount: U256::ZERO,
             buy_amount: U256::ZERO,
             valid_to: 0,
-            app_data: EMPTY_APP_DATA_JSON.to_owned(),
-            app_data_hash: EMPTY_APP_DATA_HASH,
+            app_data: OrderCreationAppData::Full {
+                full: EMPTY_APP_DATA_JSON.to_owned(),
+                hash: EMPTY_APP_DATA_HASH,
+            },
             fee_amount: U256::ZERO,
             kind: OrderKind::Sell,
             partially_fillable: false,
@@ -827,6 +961,125 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&via_new).unwrap(),
             serde_json::to_value(&via_alias).unwrap()
+        );
+    }
+
+    /// Order signed against a non-empty digest whose document this
+    /// client never holds - the hash-only submission case.
+    fn hash_only_order() -> OrderData {
+        let mut order = empty_app_data_order();
+        order.app_data = AppDataHash::repeat_byte(0xaa);
+        order
+    }
+
+    /// The hash-only wire body carries `appData` as the bare digest and
+    /// omits `appDataHash`. The omission is load-bearing: with both
+    /// fields present the orderbook's untagged decoder resolves to the
+    /// full-document shape and rejects the digest-of-hex-text mismatch.
+    #[test]
+    fn hash_only_wire_shape_omits_app_data_hash() {
+        let creation = OrderCreation::new_app_data_hash_only(
+            &hash_only_order(),
+            zero_eip712_signature(),
+            address!("70997970C51812dc3A010C7d01b50e0d17dc79C8"),
+            None,
+        )
+        .unwrap();
+        let body = serde_json::to_value(&creation).unwrap();
+        assert_eq!(
+            body["appData"],
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        );
+        assert!(
+            body.get("appDataHash").is_none(),
+            "hash-only body must omit appDataHash, got: {body}"
+        );
+    }
+
+    /// A hash-only body survives the serde round trip as the `Hash`
+    /// shape, and its projected [`OrderData`] carries the digest.
+    #[test]
+    fn hash_only_round_trips_through_serde() {
+        let order_data = hash_only_order();
+        let original = OrderCreation::new_app_data_hash_only(
+            &order_data,
+            zero_eip712_signature(),
+            address!("70997970C51812dc3A010C7d01b50e0d17dc79C8"),
+            Some(7),
+        )
+        .unwrap();
+        let json = serde_json::to_string(&original).unwrap();
+        let parsed: OrderCreation = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.app_data, original.app_data);
+        assert!(matches!(
+            parsed.app_data,
+            OrderCreationAppData::Hash { hash } if hash == order_data.app_data
+        ));
+        assert_eq!(parsed.order_data().app_data, order_data.app_data);
+        assert_eq!(parsed.quote_id, Some(7));
+    }
+
+    /// The hash-only constructor applies the same `from` validation as
+    /// [`OrderCreation::new`].
+    #[test]
+    fn hash_only_rejects_zero_from_address() {
+        let err = OrderCreation::new_app_data_hash_only(
+            &hash_only_order(),
+            zero_eip712_signature(),
+            Address::ZERO,
+            None,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, Error::OrderCreationInvalid { field: "from", .. }),
+            "got: {err}"
+        );
+    }
+
+    /// The hash-only constructor applies the same `valid_to` horizon
+    /// policy as [`OrderCreation::new`].
+    #[test]
+    fn hash_only_rejects_valid_to_beyond_default_horizon() {
+        let mut order = hash_only_order();
+        order.valid_to = valid_to_after_for_tests(DEFAULT_ORDER_VALID_TO_MAX_HORIZON_SECS + 60);
+        let err = OrderCreation::new_app_data_hash_only(
+            &order,
+            zero_eip712_signature(),
+            address!("70997970C51812dc3A010C7d01b50e0d17dc79C8"),
+            None,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(
+                err,
+                Error::OrderCreationInvalid {
+                    field: "valid_to",
+                    ..
+                }
+            ),
+            "got: {err}"
+        );
+    }
+
+    /// A body carrying a digest-valued `appData` alongside an
+    /// `appDataHash` must resolve to the full-document shape and fail
+    /// its digest check - the untagged variant ordering the hash-only
+    /// serialisation relies on.
+    #[test]
+    fn deserialise_rejects_digest_valued_app_data_with_sibling_hash() {
+        let creation = OrderCreation::new_app_data_hash_only(
+            &hash_only_order(),
+            zero_eip712_signature(),
+            address!("70997970C51812dc3A010C7d01b50e0d17dc79C8"),
+            None,
+        )
+        .unwrap();
+        let mut body = serde_json::to_value(creation).unwrap();
+        body["appDataHash"] = body["appData"].clone();
+        let err = serde_json::from_value::<OrderCreation>(body).unwrap_err();
+        assert!(
+            err.to_string().contains("app_data"),
+            "expected the full-shape digest check to reject, got: {err}"
         );
     }
 

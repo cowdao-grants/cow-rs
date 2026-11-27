@@ -46,8 +46,8 @@ pub use quote::*;
 
 mod orders;
 pub use orders::{
-    DEFAULT_ORDER_VALID_TO_MAX_HORIZON_SECS, Order, OrderCreation, OrderCreationBuilder,
-    OrderStatus,
+    DEFAULT_ORDER_VALID_TO_MAX_HORIZON_SECS, Order, OrderCreation, OrderCreationAppData,
+    OrderCreationBuilder, OrderStatus,
 };
 
 mod api;

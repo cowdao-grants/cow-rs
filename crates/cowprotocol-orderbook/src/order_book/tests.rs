@@ -384,7 +384,6 @@ mod wire_shape {
         assert_eq!(parsed.from, original.from);
         assert_eq!(parsed.quote_id, original.quote_id);
         assert_eq!(parsed.app_data, original.app_data);
-        assert_eq!(parsed.app_data_hash, original.app_data_hash);
         assert_eq!(parsed.signing_scheme, original.signing_scheme);
         parsed
     }
