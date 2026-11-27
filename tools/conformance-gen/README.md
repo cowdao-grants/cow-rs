@@ -26,9 +26,10 @@ settlement contract and signer are fixed. Every order sets `partiallyFillable`
 to false. The two amount boundary vectors set the sell, buy and fee amounts to
 the same boundary value. The absent and zero-address receiver cases produce the
 same hash, signatures and UID, because services encodes an absent receiver as
-the zero address. The base order has a non-zero fee, which is part of the
-signed order. These cases do not test orderbook acceptance. EIP-1271
-and presign are out of scope.
+the zero address. The base order keeps the non-zero fee from services' test,
+and the fee is part of the signed order. The orderbook rejects new orders with
+a non-zero fee, so these cases do not test orderbook acceptance. EIP-1271 and
+presign are out of scope.
 
 ## Format
 
