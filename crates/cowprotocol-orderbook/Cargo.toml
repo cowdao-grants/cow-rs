@@ -1,0 +1,69 @@
+[package]
+name = "cowprotocol-orderbook"
+version = "0.2.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme.workspace = true
+description = "CoW Protocol orderbook DTOs, quote builders, and HTTP client."
+homepage = "https://github.com/cowdao-grants/cow-rs"
+documentation = "https://docs.rs/cowprotocol-orderbook"
+keywords = ["cow-protocol", "ethereum", "defi", "api"]
+categories = ["cryptography::cryptocurrencies", "api-bindings"]
+
+# Build docs for both targets so the per-target transports
+# (ReqwestTransport natively, FetchTransport on wasm32) all render.
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+targets = ["x86_64-unknown-linux-gnu", "wasm32-unknown-unknown"]
+
+[lints]
+workspace = true
+
+[features]
+default = ["http-client", "subgraph"]
+# One switch, two backends: reqwest on native targets, the browser
+# `fetch` global on wasm32. `js-sys` is a small unconditional wasm32
+# dependency because order validation also needs `Date.now()` there;
+# the other optional `dep:` entries activate solely where their target
+# table applies. The quote pipeline's signer bound comes through
+# `cowprotocol_signing::SignerSync` (that crate owns the alloy-signer
+# edge for `OrderData::sign`), so this feature only gates transports.
+http-client = [
+    "dep:reqwest",
+    "dep:wasm-bindgen",
+    "dep:wasm-bindgen-futures",
+]
+# Needs `http-client` for the DefaultTransport-backed constructors.
+subgraph = ["http-client"]
+
+[dependencies]
+alloy-primitives.workspace = true
+cowprotocol-appdata = { version = "0.2.0", path = "../cowprotocol-appdata" }
+cowprotocol-primitives = { version = "0.1.1", path = "../cowprotocol-primitives" }
+cowprotocol-signing = { version = "0.2.0", path = "../cowprotocol-signing" }
+serde.workspace = true
+serde_json.workspace = true
+serde_with.workspace = true
+thiserror.workspace = true
+url.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+reqwest = { workspace = true, features = ["rustls-tls"], optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys.workspace = true
+wasm-bindgen = { workspace = true, optional = true }
+wasm-bindgen-futures = { workspace = true, optional = true }
+
+[dev-dependencies]
+alloy-signer-local.workspace = true
+hex-literal.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+wiremock.workspace = true
+http = "1"

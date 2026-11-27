@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>cow-rs · wasm end-to-end harness</title>
+  <style>
+    body { font-family: -apple-system, system-ui, sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+    .meta { color: #666; font-size: 0.85rem; margin-bottom: 1.5rem; }
+    section { border: 1px solid #ddd; border-radius: 6px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+    section h2 { margin-top: 0; font-size: 1.05rem; }
+    pre { background: #f5f5f5; padding: 0.75rem; border-radius: 4px; overflow-x: auto; font-size: 0.85rem; line-height: 1.4; max-height: 300px; }
+    .pass { color: #138a36; font-weight: 600; }
+    .fail { color: #c4262e; font-weight: 600; }
+    .pending { color: #888; }
+    .group { color: #666; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; margin: 1.5rem 0 0.5rem; }
+    button { padding: 0.5rem 1rem; font-size: 0.95rem; cursor: pointer; margin-right: 0.5rem; }
+    code { background: #f5f5f5; padding: 0 0.25rem; border-radius: 2px; }
+    input[type="text"] { padding: 0.4rem 0.6rem; font-size: 0.9rem; font-family: ui-monospace, monospace; width: 28rem; max-width: 100%; margin-bottom: 0.5rem; }
+    label { font-size: 0.85rem; color: #444; display: inline-block; margin-right: 0.5rem; }
+  </style>
+</head>
+<body>
+  <h1>cow-rs · wasm end-to-end harness</h1>
+  <p class="meta">
+    Loads <code>crates/cow-sdk-wasm/pkg/cow_sdk_wasm.js</code> and exercises the
+    Rust SDK from the browser. Built with <code>--features in_shim_signing</code>
+    so the ECDSA panels work. Start with <code>just wasm-harness</code> then
+    open <code>http://localhost:8765/test-harness/</code>.
+  </p>
+
+  <p class="group">Pure compute (no network)</p>
+
+  <section>
+    <h2>1. <code>order_uid</code> — UID parity</h2>
+    <p>
+      Derives the 56-byte order UID for a fixed sell-only order against the
+      mainnet GPv2Settlement domain. Sanity-checks the byte length so
+      regressions in <code>OrderData::uid</code> surface immediately.
+    </p>
+    <p id="uid-status" class="pending">⏳ waiting…</p>
+    <pre id="uid-output"></pre>
+  </section>
+
+  <section>
+    <h2>2. <code>chain_info</code> — eleven networks</h2>
+    <p>
+      Per-chain config (settlement address, orderbook URLs, ComposableCoW
+      support). Exercises the JSON-out path for nested objects.
+    </p>
+    <button id="run-chain-info">Lookup chain_info("mainnet")</button>
+    <p id="chain-info-status" class="pending">click the button to run</p>
+    <pre id="chain-info-output"></pre>
+  </section>
+
+  <section>
+    <h2>3. <code>eip712_payload</code> — cross-library digest parity</h2>
+    <p>
+      Builds the canonical typed-data input via the shim's
+      <code>eip712_payload</code>, then hashes it independently with
+      viem's <code>hashTypedData</code>, ethers' <code>TypedDataEncoder</code>,
+      and the shim's own <code>order_struct_hash</code> +
+      <code>eip712_message_hash</code> path. All three must match byte
+      for byte. (Cow SDK parity follows transitively: its
+      <code>hashTypedData</code> delegates to ethers' encoder.)
+    </p>
+    <button id="run-parity">Compare digests</button>
+    <p id="parity-status" class="pending">click the button to run</p>
+    <pre id="parity-output"></pre>
+  </section>
+
+  <section>
+    <h2>4. <code>sign_eip712</code> — in-shim ECDSA signing</h2>
+    <p>
+      Signs the same fixed order with a hardhat-test private key (anvil
+      account #1). Pure compute; proves <code>k256</code> works inside
+      wasm linear memory. The signing scheme, owner, and (r, s, v) come
+      out byte-exact.
+    </p>
+    <label for="signer-pk">Private key (32-byte hex)</label>
+    <br />
+    <input id="signer-pk" type="text" value="0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d">
+    <br />
+    <button id="run-sign">Sign EIP-712</button>
+    <p id="sign-status" class="pending">click the button to run</p>
+    <pre id="sign-output"></pre>
+  </section>
+
+  <section>
+    <h2>5. Cross-library <em>signature</em> parity + round-trip</h2>
+    <p>
+      Signs the same payload three different ways and asserts
+      <code>(r, s, v)</code> parity.
+    </p>
+    <ul>
+      <li>
+        <strong>Anvil PK mode</strong>: viem (<code>privateKeyToAccount</code>),
+        ethers (<code>Wallet</code>), and shim (<code>sign_eip712</code>) all
+        sign with the same inline key. RFC 6979 deterministic ECDSA means the
+        signatures must be byte-identical.
+      </li>
+      <li>
+        <strong>MetaMask mode</strong>: viem uses
+        <code>createWalletClient + custom(window.ethereum)</code>; ethers uses
+        <code>BrowserProvider</code>; <code>shim</code> uses raw EIP-1193
+        (<code>window.ethereum.request</code>) with no JS signing library — the
+        shim only builds the payload via <code>eip712_payload</code> and consumes
+        the signature via <code>build_order_creation</code>. Signatures
+        produced by the same account match across all three.
+      </li>
+    </ul>
+    <p>
+      The last-clicked signature is fed through
+      <code>build_order_creation</code> to prove the shim accepts
+      externally-produced signatures end-to-end.
+    </p>
+    <p style="margin: 0.5rem 0;">
+      <label>
+        <input type="radio" name="sign-source" id="sign-source-pk" value="pk" checked>
+        Anvil PK (deterministic; all three agree)
+      </label>
+      <br>
+      <label>
+        <input type="radio" name="sign-source" id="sign-source-mm" value="mm">
+        MetaMask (real wallet popup; shim disabled)
+      </label>
+    </p>
+    <button id="sign-viem">Sign (viem)</button>
+    <button id="sign-ethers">Sign (ethers)</button>
+    <button id="sign-shim">Sign (shim)</button>
+    <button id="sign-reset" style="margin-left:1rem; background:#eee">Reset</button>
+    <p id="sign-parity-status" class="pending">click a button to run</p>
+    <pre id="sign-parity-output"></pre>
+  </section>
+
+  <p class="group">Live orderbook (network)</p>
+
+  <section>
+    <h2>6. <code>get_quote_simple</code> — quote against api.cow.fi mainnet</h2>
+    <p>
+      Hits the live orderbook. Demonstrates reqwest's browser-fetch backend,
+      CORS, JSON deserialisation across the wasm boundary, and UID derivation
+      from the quote response. <strong>Network call</strong>: results depend
+      on api.cow.fi being reachable from the browser.
+    </p>
+    <button id="run-quote">Run get_quote_simple (USDC → DAI, 100 USDC)</button>
+    <p id="quote-status" class="pending">click the button to run</p>
+    <pre id="quote-output"></pre>
+  </section>
+
+  <section>
+    <h2>7. <code>version</code> — orderbook git revision</h2>
+    <p>
+      Calls <code>GET /api/v1/version</code> against
+      <code>api.cow.fi/mainnet</code>. Smallest possible network test;
+      surfaces the orderbook's deployed git revision.
+    </p>
+    <button id="run-version">Get version</button>
+    <p id="version-status" class="pending">click the button to run</p>
+    <pre id="version-output"></pre>
+  </section>
+
+  <section>
+    <h2>8. Submit an order through your wallet (USDC → ETH on Base)</h2>
+    <p>
+      Full end-to-end flow against <code>api.cow.fi/base</code>:
+    </p>
+    <ol>
+      <li>Quote 25 USDC → ETH for your connected address.</li>
+      <li>Swap the orderbook's empty <code>appData</code> for
+        <code>sdk_app_data_*()</code> so the order is attributed to
+        <code>cow-rs-wasm</code> in the indexer.</li>
+      <li>Build the EIP-712 typed-data via <code>eip712_payload</code>,
+        sign with MetaMask (raw <code>eth_signTypedData_v4</code>; no
+        viem / ethers needed).</li>
+      <li>POST the signed body via <code>post_order</code> and surface
+        the order UID + explorer URL.</li>
+    </ol>
+    <p>
+      <strong>Submission only.</strong> The orderbook accepts the
+      signed payload immediately; settlement requires you to actually
+      hold the sell-side USDC on Base and to have approved the GPv2
+      Vault relayer
+      (<code>0xC92E8bdf79f0507f65a392b0ab4667716BFE0110</code>).
+      Without that, the order stays in
+      <code>cancelled</code> / <code>expired</code> rather than
+      <code>traded</code>, but submission still records.
+    </p>
+    <p style="margin: 0.5rem 0;">
+      <label for="sell-amount-usdc">Sell amount (USDC, integer):</label>
+      <input id="sell-amount-usdc" type="text" value="1" style="width: 6rem;">
+      <span style="color:#666; font-size:0.8rem;">
+        — your wallet must hold at least this much USDC on Base.
+      </span>
+    </p>
+    <button id="connect-wallet">Connect wallet</button>
+    <button id="probe-usdc-balance" disabled>Probe USDC balance</button>
+    <button id="submit-base-order" disabled>Sign &amp; submit (Base)</button>
+    <p id="submit-status" class="pending">click <em>Connect wallet</em> first</p>
+    <pre id="submit-output"></pre>
+  </section>
+
+  <script type="module">
+    import init, {
+      build_order_creation,
+      chain_info,
+      domain_separator,
+      eip712_message_hash,
+      eip712_payload,
+      empty_app_data_hash,
+      get_quote,
+      get_quote_simple,
+      order_struct_hash,
+      order_uid,
+      post_order,
+      sdk_app_data_hash,
+      sdk_app_data_json,
+      sign_eip712,
+      to_signed_order_data,
+      version,
+    } from '../crates/cow-sdk-wasm/pkg/cow_sdk_wasm.js';
+    import { hashTypedData, hexToBytes, createWalletClient, custom } from 'https://esm.sh/viem@2.21.0';
+    import { privateKeyToAccount } from 'https://esm.sh/viem@2.21.0/accounts';
+    import { mainnet } from 'https://esm.sh/viem@2.21.0/chains';
+    import { TypedDataEncoder, Wallet, BrowserProvider } from 'https://esm.sh/ethers@6.13.4';
+    // @cowprotocol/cow-sdk v9 routes EIP-712 hashing through an
+    // AdapterContext-installed provider, which delegates to ethers's
+    // TypedDataEncoder. So cow-sdk parity is transitive: if ethers
+    // matches, cow-sdk matches. The Rust side locks ethers parity for
+    // every chain (see `recon/audit-tests.md`).
+
+    const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
+    const DAI  = '0x6B175474E89094C44Da98b954EedeAC495271d0F';
+    const OWNER = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
+
+    function setStatus(el, ok, msg) {
+      el.className = ok ? 'pass' : 'fail';
+      el.textContent = msg;
+    }
+
+    function runOnClick(buttonId, statusId, outputId, run) {
+      const button = document.getElementById(buttonId);
+      const status = document.getElementById(statusId);
+      const output = document.getElementById(outputId);
+      button.addEventListener('click', async () => {
+        setStatus(status, true, '⏳ running…');
+        output.textContent = '';
+        try {
+          const t0 = performance.now();
+          const result = await run();
+          const ms = (performance.now() - t0).toFixed(0);
+          output.textContent = typeof result.body === 'string'
+            ? result.body
+            : JSON.stringify(result.body, null, 2);
+          setStatus(status, true, `✅ ${result.summary} (${ms} ms)`);
+        } catch (err) {
+          setStatus(status, false, `❌ ${err.message ?? err}`);
+          output.textContent = String(err);
+        }
+      });
+    }
+
+    async function main() {
+      await init();
+
+      // Panel 1: UID parity (runs immediately, no input).
+      const uidStatus = document.getElementById('uid-status');
+      const uidOutput = document.getElementById('uid-output');
+      try {
+        const order = {
+          sellToken: USDC,
+          buyToken: DAI,
+          receiver: null,
+          sellAmount: '100000000',
+          buyAmount: '99000000000000000000',
+          validTo: 4294967295,
+          appData: empty_app_data_hash(),
+          feeAmount: '0',
+          kind: 'sell',
+          partiallyFillable: false,
+          sellTokenBalance: 'erc20',
+          buyTokenBalance: 'erc20',
+        };
+        const uid = order_uid(order, 'mainnet', OWNER);
+        uidOutput.textContent = uid;
+        if (typeof uid !== 'string' || !uid.startsWith('0x') || uid.length !== 114) {
+          throw new Error(`unexpected UID shape: length=${uid.length}, head=${uid.slice(0, 4)}`);
+        }
+        setStatus(uidStatus, true, `✅ derived 56-byte UID`);
+      } catch (err) {
+        setStatus(uidStatus, false, `❌ ${err.message ?? err}`);
+        uidOutput.textContent = String(err);
+      }
+
+      // Panel 2: chain_info.
+      runOnClick('run-chain-info', 'chain-info-status', 'chain-info-output', async () => {
+        const info = chain_info('mainnet');
+        if (info.id !== 1 || !info.settlement?.startsWith('0x')) {
+          throw new Error('chain_info missing id or settlement');
+        }
+        return { body: info, summary: `id=${info.id}, settlement=${info.settlement.slice(0, 10)}…` };
+      });
+
+      // Panel 3: cross-library EIP-712 digest parity.
+      runOnClick('run-parity', 'parity-status', 'parity-output', async () => {
+        const orderData = {
+          sellToken: USDC, buyToken: DAI, receiver: OWNER,
+          sellAmount: '100000000', buyAmount: '99000000000000000000',
+          validTo: 4294967295,
+          appData: '0xb48d38f93eaa084033fc5970bf96e559c33c4cdc07d889ab00b4d63f9590739d',
+          feeAmount: '0', kind: 'sell', partiallyFillable: false,
+          sellTokenBalance: 'erc20', buyTokenBalance: 'erc20',
+        };
+        const payload = eip712_payload(orderData, 'mainnet');
+
+        // shim path: domain_separator + order_struct_hash + eip712_message_hash.
+        const shimDigest = eip712_message_hash(
+          domain_separator('mainnet'),
+          order_struct_hash(orderData),
+        );
+
+        // viem.
+        const viemDigest = hashTypedData(payload);
+
+        // ethers v6. TypedDataEncoder ignores primaryType (it derives it).
+        const ethersDigest = TypedDataEncoder.hash(payload.domain, payload.types, payload.message);
+
+        const all = [shimDigest, viemDigest, ethersDigest].map(d => d.toLowerCase());
+        const matches = all.every(d => d === all[0]);
+        const body = {
+          shim:   shimDigest,
+          viem:   viemDigest,
+          ethers: ethersDigest,
+          cowSdk: '(transitive: routes through ethers TypedDataEncoder)',
+          matches,
+        };
+        if (!matches) throw new Error('digests diverge across libraries');
+        return { body, summary: `shim / viem / ethers agree on ${shimDigest.slice(0, 14)}…` };
+      });
+
+      // Panel 5: cross-library signature parity + round-trip.
+      const SIGN_PK = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
+      const SIGN_ORDER = {
+        sellToken: USDC, buyToken: DAI, receiver: OWNER,
+        sellAmount: '100000000', buyAmount: '99000000000000000000',
+        validTo: 4294967295,
+        appData: '0xb48d38f93eaa084033fc5970bf96e559c33c4cdc07d889ab00b4d63f9590739d',
+        feeAmount: '0', kind: 'sell', partiallyFillable: false,
+        sellTokenBalance: 'erc20', buyTokenBalance: 'erc20',
+      };
+      const signResults = {};
+      const signStatusEl = document.getElementById('sign-parity-status');
+      const signOutputEl = document.getElementById('sign-parity-output');
+
+      function splitSig(hex) {
+        const bytes = hexToBytes(hex);
+        return {
+          r: '0x' + Array.from(bytes.slice(0, 32)).map(b => b.toString(16).padStart(2, '0')).join(''),
+          s: '0x' + Array.from(bytes.slice(32, 64)).map(b => b.toString(16).padStart(2, '0')).join(''),
+          v: bytes[64],
+        };
+      }
+
+      let signRoundTrip = null;
+      function renderSignResults() {
+        signOutputEl.textContent = JSON.stringify(
+          { ...signResults, ...(signRoundTrip ? { roundTrip: signRoundTrip } : {}) },
+          null,
+          2,
+        );
+        const labels = Object.keys(signResults);
+        if (labels.length < 2) {
+          setStatus(signStatusEl, true, `⏳ ${labels.length}/3 signed; need more to compare`);
+          return;
+        }
+        const sigs = labels.map(k => signResults[k].sig);
+        const allMatch = sigs.every(s =>
+          s.r.toLowerCase() === sigs[0].r.toLowerCase()
+            && s.s.toLowerCase() === sigs[0].s.toLowerCase()
+            && s.v === sigs[0].v,
+        );
+        if (!allMatch) {
+          setStatus(signStatusEl, false, `❌ ${labels.length} signatures disagree`);
+          return;
+        }
+        // Round-trip the last-clicked signature through build_order_creation.
+        try {
+          const last = signResults[labels[labels.length - 1]];
+          const creation = build_order_creation(SIGN_ORDER, {
+            signingScheme: 'eip712', ...last.sig,
+          }, 'mainnet', OWNER, '{}', null);
+          signRoundTrip = {
+            signatureWire: creation.signature,
+            from: creation.from,
+            ok: typeof creation.signature === 'string' && creation.signature.startsWith('0x'),
+          };
+          signOutputEl.textContent = JSON.stringify(
+            { ...signResults, roundTrip: signRoundTrip },
+            null,
+            2,
+          );
+          setStatus(signStatusEl, true,
+            `✅ ${labels.length}/3 agree on (r,s,v); build_order_creation accepted the bag`);
+        } catch (err) {
+          setStatus(signStatusEl, false, `❌ build_order_creation: ${err.message ?? err}`);
+        }
+      }
+
+      function sourceMode() {
+        return document.querySelector('input[name="sign-source"]:checked')?.value ?? 'pk';
+      }
+
+      function ensureWallet() {
+        if (typeof window.ethereum === 'undefined') {
+          throw new Error('window.ethereum not found; install MetaMask or similar');
+        }
+      }
+
+      document.getElementById('sign-viem').addEventListener('click', async () => {
+        try {
+          const payload = eip712_payload(SIGN_ORDER, 'mainnet');
+          let hex;
+          if (sourceMode() === 'mm') {
+            ensureWallet();
+            const client = createWalletClient({ chain: mainnet, transport: custom(window.ethereum) });
+            const [account] = await client.requestAddresses();
+            hex = await client.signTypedData({ account, ...payload });
+          } else {
+            const account = privateKeyToAccount(SIGN_PK);
+            hex = await account.signTypedData(payload);
+          }
+          signResults.viem = { hex, sig: splitSig(hex), source: sourceMode() };
+          renderSignResults();
+        } catch (err) {
+          setStatus(signStatusEl, false, `❌ viem: ${err.message ?? err}`);
+        }
+      });
+
+      document.getElementById('sign-ethers').addEventListener('click', async () => {
+        try {
+          const payload = eip712_payload(SIGN_ORDER, 'mainnet');
+          let hex;
+          if (sourceMode() === 'mm') {
+            ensureWallet();
+            const provider = new BrowserProvider(window.ethereum);
+            const signer = await provider.getSigner();
+            hex = await signer.signTypedData(payload.domain, payload.types, payload.message);
+          } else {
+            const wallet = new Wallet(SIGN_PK);
+            hex = await wallet.signTypedData(payload.domain, payload.types, payload.message);
+          }
+          signResults.ethers = { hex, sig: splitSig(hex), source: sourceMode() };
+          renderSignResults();
+        } catch (err) {
+          setStatus(signStatusEl, false, `❌ ethers: ${err.message ?? err}`);
+        }
+      });
+
+      const shimBtn = document.getElementById('sign-shim');
+      shimBtn.addEventListener('click', async () => {
+        try {
+          if (sourceMode() === 'mm') {
+            // Shim-orchestrated wallet flow: shim builds the payload via
+            // eip712_payload, raw EIP-1193 prompts MetaMask (no viem /
+            // ethers needed), shim consumes the signature via
+            // build_order_creation.
+            ensureWallet();
+            const payload = eip712_payload(SIGN_ORDER, 'mainnet');
+            // eth_signTypedData_v4 requires `EIP712Domain` in `types`;
+            // viem and ethers throw on it, so the shim deliberately
+            // omits it. Inject it here for the raw wallet RPC.
+            const rpcPayload = {
+              ...payload,
+              types: {
+                EIP712Domain: [
+                  { name: 'name',              type: 'string'  },
+                  { name: 'version',           type: 'string'  },
+                  { name: 'chainId',           type: 'uint256' },
+                  { name: 'verifyingContract', type: 'address' },
+                ],
+                ...payload.types,
+              },
+            };
+            const [account] = await window.ethereum.request({ method: 'eth_requestAccounts' });
+            const hex = await window.ethereum.request({
+              method: 'eth_signTypedData_v4',
+              params: [account, JSON.stringify(rpcPayload)],
+            });
+            signResults.shim = {
+              hex,
+              sig: splitSig(hex),
+              source: 'mm',
+              note: 'shim built payload + consumed signature; window.ethereum signed',
+            };
+          } else {
+            const bag = sign_eip712(SIGN_ORDER, 'mainnet', SIGN_PK);
+            signResults.shim = {
+              hex: '(shim returns the r/s/v bag directly, no concatenated hex)',
+              sig: { r: bag.r, s: bag.s, v: bag.v },
+              source: 'pk',
+            };
+          }
+          renderSignResults();
+        } catch (err) {
+          setStatus(signStatusEl, false, `❌ shim: ${err.message ?? err}`);
+        }
+      });
+
+      document.getElementById('sign-reset').addEventListener('click', () => {
+        Object.keys(signResults).forEach(k => delete signResults[k]);
+        signOutputEl.textContent = '';
+        setStatus(signStatusEl, true, '⏳ click a button to run');
+        signStatusEl.className = 'pending';
+      });
+
+      // Panel 4: sign_eip712.
+      runOnClick('run-sign', 'sign-status', 'sign-output', async () => {
+        const pk = document.getElementById('signer-pk').value.trim();
+        const orderData = {
+          sellToken: USDC,
+          buyToken: DAI,
+          receiver: null,
+          sellAmount: '100000000',
+          buyAmount: '99000000000000000000',
+          validTo: 4294967295,
+          appData: '0xb48d38f93eaa084033fc5970bf96e559c33c4cdc07d889ab00b4d63f9590739d',
+          feeAmount: '0',
+          kind: 'sell',
+          partiallyFillable: false,
+          sellTokenBalance: 'erc20',
+          buyTokenBalance: 'erc20',
+        };
+        const sig = sign_eip712(orderData, 'mainnet', pk);
+        if (!sig.r?.startsWith('0x') || !sig.s?.startsWith('0x') || typeof sig.v !== 'number') {
+          throw new Error('signature missing r/s/v fields');
+        }
+        if (!sig.owner?.startsWith('0x') || sig.owner.length !== 42) {
+          throw new Error('signature missing recovered owner');
+        }
+        return { body: sig, summary: `owner=${sig.owner.slice(0, 10)}…, scheme=${sig.signingScheme}` };
+      });
+
+      // Panel 4: get_quote_simple.
+      runOnClick('run-quote', 'quote-status', 'quote-output', async () => {
+        const result = await get_quote_simple(USDC, DAI, OWNER, '100000000', 'mainnet');
+        if (!result?.response?.quote?.buyAmount) {
+          throw new Error('response missing quote.buyAmount');
+        }
+        if (typeof result.uid !== 'string' || result.uid.length !== 114) {
+          throw new Error('response missing derived 56-byte uid');
+        }
+        return { body: result, summary: `buy ${result.response.quote.buyAmount} DAI` };
+      });
+
+      // Panel 5: version.
+      runOnClick('run-version', 'version-status', 'version-output', async () => {
+        const v = await version('mainnet');
+        if (typeof v !== 'string' || v.length === 0) {
+          throw new Error('empty version response');
+        }
+        return { body: v, summary: v.slice(0, 32) };
+      });
+
+      // Panel 8: submit a real order through MetaMask on Base.
+      //
+      // Mirrors the cowswap frontend's `POST /base/api/v1/quote` payload
+      // (USDC -> ETH, 25 USDC) so the resulting order is comparable to
+      // what swap.cow.fi would build, with one difference: the appData
+      // points at `sdk_app_data_*()` so the indexer attributes this
+      // order back to `cow-rs-wasm`.
+      const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+      const ETH_PLACEHOLDER = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
+      const BASE_CHAIN_ID_HEX = '0x2105'; // 8453
+      const BASE_VAULT_RELAYER = '0xC92E8bdf79f0507f65a392b0ab4667716BFE0110';
+      const submitStatus = document.getElementById('submit-status');
+      const submitOutput = document.getElementById('submit-output');
+      const submitButton = document.getElementById('submit-base-order');
+      const connectButton = document.getElementById('connect-wallet');
+      const probeButton = document.getElementById('probe-usdc-balance');
+      let connectedAccount = null;
+
+      // `IERC20.balanceOf(address)` selector: keccak256 prefix of
+      // "balanceOf(address)" = 0x70a08231.
+      const ERC20_BALANCE_OF_SELECTOR = '0x70a08231';
+      // Same shape on Base (USDbC is the deprecated bridged variant).
+      const USDBC_BASE = '0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA';
+
+      async function probeUsdcBalance(account) {
+        const padded = account.toLowerCase().replace(/^0x/, '').padStart(64, '0');
+        const data = ERC20_BALANCE_OF_SELECTOR + padded;
+        async function balanceAt(token) {
+          const hex = await window.ethereum.request({
+            method: 'eth_call',
+            params: [{ to: token, data }, 'latest'],
+          });
+          // The contract returns uint256 as a 0x-prefixed 32-byte hex word.
+          return BigInt(hex);
+        }
+        const [usdc, usdbc] = await Promise.all([
+          balanceAt(USDC_BASE),
+          balanceAt(USDBC_BASE),
+        ]);
+        return { usdc, usdbc };
+      }
+
+      function formatUsdc(atomic) {
+        // 6-decimal display. Truncate, don't round, so the user can see
+        // exactly what the orderbook checks against.
+        const whole = atomic / 1_000_000n;
+        const frac = (atomic % 1_000_000n).toString().padStart(6, '0');
+        return `${whole}.${frac} (${atomic} atomic)`;
+      }
+
+      probeButton.addEventListener('click', async () => {
+        if (!connectedAccount) {
+          setStatus(submitStatus, false, '❌ connect a wallet first');
+          return;
+        }
+        try {
+          setStatus(submitStatus, true, '⏳ reading balances on Base…');
+          const { usdc, usdbc } = await probeUsdcBalance(connectedAccount);
+          const want = (document.getElementById('sell-amount-usdc').value || '0').trim();
+          const wantAtomic = BigInt(want || '0') * 1_000_000n;
+          submitOutput.textContent = JSON.stringify(
+            {
+              account: connectedAccount,
+              USDC_native:   { contract: USDC_BASE,  balance: formatUsdc(usdc)  },
+              USDbC_bridged: { contract: USDBC_BASE, balance: formatUsdc(usdbc) },
+              required_for_submit: formatUsdc(wantAtomic),
+              decision: usdc >= wantAtomic
+                ? 'OK -- native USDC balance ≥ required'
+                : 'INSUFFICIENT -- the orderbook checks the native USDC contract',
+            },
+            null,
+            2,
+          );
+          setStatus(submitStatus, true, usdc >= wantAtomic
+            ? `✅ wallet holds ${formatUsdc(usdc)} native USDC (≥ ${want})`
+            : `⚠️ wallet holds ${formatUsdc(usdc)} native USDC -- need ${want}`);
+        } catch (err) {
+          setStatus(submitStatus, false, `❌ balance probe: ${err.message ?? err}`);
+        }
+      });
+
+      let connectInFlight = false;
+      connectButton.addEventListener('click', async () => {
+        if (connectInFlight) {
+          setStatus(submitStatus, false,
+            '❌ a wallet connect prompt is already open; check the MetaMask extension icon');
+          return;
+        }
+        connectInFlight = true;
+        connectButton.disabled = true;
+        try {
+          if (typeof window.ethereum === 'undefined') {
+            throw new Error('window.ethereum not found; install MetaMask or similar');
+          }
+          // Reuse an existing authorised account if there is one, so a
+          // double-click does not stack a second eth_requestAccounts
+          // call MetaMask will then reject with
+          // "Request of type 'wallet_requestPermissions' already pending".
+          let accounts = await window.ethereum.request({ method: 'eth_accounts' });
+          if (accounts.length === 0) {
+            accounts = await window.ethereum.request({
+              method: 'eth_requestAccounts',
+            });
+          }
+          const account = accounts[0];
+
+          // Make sure the wallet is on Base; prompt to switch if not.
+          const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+          if (chainId !== BASE_CHAIN_ID_HEX) {
+            try {
+              await window.ethereum.request({
+                method: 'wallet_switchEthereumChain',
+                params: [{ chainId: BASE_CHAIN_ID_HEX }],
+              });
+            } catch (switchErr) {
+              throw new Error(
+                `wallet on chain ${chainId}, expected ${BASE_CHAIN_ID_HEX} (Base). `
+                  + 'Switch manually and try again. '
+                  + `Underlying error: ${switchErr.message ?? switchErr}`,
+              );
+            }
+          }
+          connectedAccount = account;
+          submitButton.disabled = false;
+          probeButton.disabled = false;
+          setStatus(submitStatus, true, `✅ wallet connected: ${account}`);
+        } catch (err) {
+          const msg = err.message ?? String(err);
+          // Tell the user how to clear MetaMask's pending state rather
+          // than just echoing the raw error.
+          if (msg.includes('already pending')) {
+            setStatus(submitStatus, false,
+              '❌ a connect prompt is already open in MetaMask. Click the MetaMask '
+                + 'extension icon, approve / reject the pending request, then retry.');
+          } else {
+            setStatus(submitStatus, false, `❌ ${msg}`);
+          }
+        } finally {
+          connectInFlight = false;
+          connectButton.disabled = false;
+        }
+      });
+
+      submitButton.addEventListener('click', async () => {
+        if (!connectedAccount) {
+          setStatus(submitStatus, false, '❌ connect a wallet first');
+          return;
+        }
+        const account = connectedAccount;
+        setStatus(submitStatus, true, '⏳ quoting…');
+        submitOutput.textContent = '';
+        try {
+          // 1. Quote. Sell amount comes from the input; converted to
+          //    atomic (6-decimal) units. Whole numbers only -- the
+          //    panel is a smoke test, not a calculator.
+          const rawAmount = document.getElementById('sell-amount-usdc').value.trim();
+          const sellAmountInteger = BigInt(rawAmount || '0');
+          if (sellAmountInteger <= 0n) {
+            throw new Error('enter a positive integer USDC amount');
+          }
+          const sellAmountAtomic = (sellAmountInteger * 1_000_000n).toString();
+          const request = {
+            sellToken: USDC_BASE,
+            buyToken:  ETH_PLACEHOLDER,
+            from:      account,
+            kind:      'sell',
+            sellAmountBeforeFee: sellAmountAtomic,
+          };
+          const response = await get_quote(request, 'base');
+
+          // 2. SDK attribution app-data.
+          const appDataJson = sdk_app_data_json();
+          const appDataHash = sdk_app_data_hash();
+
+          // 3. Project the response into the OrderData the wallet will
+          //    sign. `to_signed_order_data` is the only blessed
+          //    assembly path: it cross-checks the response against
+          //    `request` (sellToken / buyToken / receiver / from /
+          //    kind, plus the pinned appData hash) and applies the
+          //    documented sell-side fee adjustment, so a hostile
+          //    orderbook cannot smuggle a swapped field into what we
+          //    sign.
+          const orderData = to_signed_order_data(request, response, appDataHash);
+
+          // 4. Build the EIP-712 typed-data payload + sign with the
+          //    raw EIP-1193 RPC. `eth_signTypedData_v4` requires
+          //    `EIP712Domain` in `types`; the shim omits it
+          //    (viem / ethers reject duplicates), so we inject it here
+          //    before stringifying for MetaMask.
+          setStatus(submitStatus, true, '⏳ awaiting MetaMask signature…');
+          const payload = eip712_payload(orderData, 'base');
+          const rpcPayload = {
+            ...payload,
+            types: {
+              EIP712Domain: [
+                { name: 'name',              type: 'string'  },
+                { name: 'version',           type: 'string'  },
+                { name: 'chainId',           type: 'uint256' },
+                { name: 'verifyingContract', type: 'address' },
+              ],
+              ...payload.types,
+            },
+          };
+          const sigHex = await window.ethereum.request({
+            method: 'eth_signTypedData_v4',
+            params: [account, JSON.stringify(rpcPayload)],
+          });
+          const r = '0x' + sigHex.slice(2, 66);
+          const s = '0x' + sigHex.slice(66, 130);
+          const v = parseInt(sigHex.slice(130, 132), 16);
+
+          // 5. Build the OrderCreation body and submit.
+          //
+          // `quote_id` is `Option<u64>` on the wasm side and wasm-bindgen
+          // requires a `bigint | undefined` for that type, not a plain
+          // JS Number (Number tops out at 53 bits of precision so the
+          // binding refuses it). Coerce defensively.
+          setStatus(submitStatus, true, '⏳ posting to api.cow.fi/base…');
+          const quoteIdRaw = response.id;
+          const quoteId = quoteIdRaw == null ? undefined : BigInt(quoteIdRaw);
+          const creation = build_order_creation(
+            orderData,
+            { signingScheme: 'eip712', r, s, v },
+            'base',
+            account,
+            appDataJson,
+            quoteId,
+          );
+          const uid = await post_order(creation, 'base');
+
+          submitOutput.textContent = JSON.stringify(
+            {
+              uid,
+              explorer: `https://explorer.cow.fi/base/orders/${uid}`,
+              appCode: JSON.parse(appDataJson).appCode,
+              appDataHash,
+              quoteId: response.id,
+              sellAmountAtomic: orderData.sellAmount,
+              buyAmountAtomic: orderData.buyAmount,
+              vaultRelayerToApprove: BASE_VAULT_RELAYER,
+            },
+            null,
+            2,
+          );
+          setStatus(submitStatus, true,
+            `✅ submitted — open https://explorer.cow.fi/base/orders/${uid}`);
+        } catch (err) {
+          const raw = err.message ?? String(err);
+          // The orderbook's most common rejection on this panel is
+          // `InsufficientBalance` -- a strict pre-flight check that the
+          // signer holds enough sell-side USDC at the current block.
+          // Surface it as guidance rather than a wall of HTTP text.
+          let msg = raw;
+          if (raw.includes('InsufficientBalance')) {
+            const want = (document.getElementById('sell-amount-usdc').value || '?');
+            msg = `InsufficientBalance: this wallet does not hold ≥ ${want} USDC on Base `
+                + `at the current block. Reduce the sell amount above, fund the wallet, `
+                + `or switch to a wallet with USDC on Base.`;
+          } else if (raw.includes('MissingFromAddress') || raw.includes('SellAmountOverflow')) {
+            msg = `${raw} -- check the connected wallet matches the from address the `
+                + `orderbook quoted against.`;
+          }
+          setStatus(submitStatus, false, `❌ ${msg}`);
+          submitOutput.textContent = raw;
+        }
+      });
+    }
+
+    main().catch((err) => {
+      document.body.insertAdjacentHTML(
+        'beforeend',
+        `<pre class="fail">init() failed: ${String(err)}</pre>`
+      );
+    });
+  </script>
+</body>
+</html>

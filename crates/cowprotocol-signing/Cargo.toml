@@ -1,0 +1,46 @@
+[package]
+name = "cowprotocol-signing"
+version = "0.2.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme.workspace = true
+description = "CoW Protocol signing schemes, signatures, and cancellation helpers."
+homepage = "https://github.com/cowdao-grants/cow-rs"
+documentation = "https://docs.rs/cowprotocol-signing"
+keywords = ["cow-protocol", "ethereum", "defi", "signing"]
+categories = ["cryptography::cryptocurrencies", "authentication"]
+
+[lints]
+workspace = true
+
+[dependencies]
+alloy-primitives.workspace = true
+alloy-signer.workspace = true
+alloy-sol-types.workspace = true
+const-hex.workspace = true
+cowprotocol-primitives = { version = "0.1.0", path = "../cowprotocol-primitives" }
+serde.workspace = true
+serde_json.workspace = true
+serde_with.workspace = true
+thiserror.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# Wires alloy's signing PRNG into the browser's
+# `crypto.getRandomValues` via `getrandom/js`. This belongs with the
+# signing crate so direct `cowprotocol-signing` wasm consumers work
+# without the meta crate.
+getrandom = { workspace = true, features = ["js"] }
+
+[dev-dependencies]
+alloy-signer-local.workspace = true
+# Dev-only: implements the async `Signer` trait for a mock signer that
+# exercises the `sign_ecdsa_async` error-mapping path.
+async-trait.workspace = true
+hex-literal.workspace = true
+# Dev-only: drives the `#[tokio::test]` async round trips. Dev
+# dependencies never reach downstream builds, so the wasm graph and the
+# published crate are unaffected.
+tokio = { workspace = true, features = ["macros", "rt"] }

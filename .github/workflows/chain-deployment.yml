@@ -1,0 +1,73 @@
+name: chain-deployment
+
+# Verifies, via real-RPC `eth_getCode` calls, that the canonical
+# CoW Protocol singletons the SDK hard-codes (GPv2Settlement,
+# GPv2VaultRelayer, ComposableCoW periphery, ETH-flow production /
+# staging) actually carry bytecode at the expected addresses on
+# every chain the SDK claims to support. A drift here means orders
+# signed against the SDK's domain separator cannot settle on-chain.
+#
+# These probes live in their own workflow because:
+#
+# - They hit external RPCs. A transient RPC outage should not block
+#   PRs on `ci.yml`.
+# - The contracts in question are CREATE2 singletons that effectively
+#   never change. Weekly cadence is enough to surface a misconfigured
+#   RPC secret or an SDK-side address typo.
+#
+# Manual dispatch is the right knob for new-chain rollouts: after
+# adding an entry to `Chain` or a new singleton constant, run this
+# workflow before tagging a release.
+#
+# Each `COW_RPC_<CHAIN>` value is read from a repo secret of the
+# same name. Use **authenticated** provider URLs (Alchemy, dRPC,
+# QuickNode, or the chain team's own keyed endpoint); public RPCs
+# rate-limit GitHub Actions IPs aggressively and produce flaky
+# weekly runs. Chains whose secret is empty are skipped by the test
+# itself (with a logged note) rather than failing the job, so a
+# partial-coverage configuration is still useful.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Sunday 06:00 UTC: weekly cadence, low-traffic window.
+    - cron: "0 6 * * 0"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: short
+
+jobs:
+  rpc-probe:
+    name: chain deployment probe
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master 2026-04
+        with:
+          toolchain: "1.91.1"
+      - uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+        with:
+          key: chain-deployment
+
+      - name: Run chain_deployment tests
+        # `--ignored` flips the inverse of the default so only the
+        # gated probes run. The probe lives in its own workspace crate
+        # (`tools/chain-probe`) so the published `cowprotocol` tarball
+        # does not carry probe code no consumer ever runs.
+        env:
+          COW_RPC_MAINNET: ${{ secrets.COW_RPC_MAINNET }}
+          COW_RPC_BNB: ${{ secrets.COW_RPC_BNB }}
+          COW_RPC_GNOSIS: ${{ secrets.COW_RPC_GNOSIS }}
+          COW_RPC_POLYGON: ${{ secrets.COW_RPC_POLYGON }}
+          COW_RPC_BASE: ${{ secrets.COW_RPC_BASE }}
+          COW_RPC_PLASMA: ${{ secrets.COW_RPC_PLASMA }}
+          COW_RPC_ARBITRUM: ${{ secrets.COW_RPC_ARBITRUM }}
+          COW_RPC_AVALANCHE: ${{ secrets.COW_RPC_AVALANCHE }}
+          COW_RPC_INK: ${{ secrets.COW_RPC_INK }}
+          COW_RPC_LINEA: ${{ secrets.COW_RPC_LINEA }}
+          COW_RPC_SEPOLIA: ${{ secrets.COW_RPC_SEPOLIA }}
+        run: cargo test -p chain-probe --test chain_deployment -- --ignored --nocapture

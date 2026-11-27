@@ -1,0 +1,84 @@
+[package]
+name = "cow-sdk-wasm"
+version = "0.2.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "JavaScript bindings for the cowprotocol Rust SDK. Publishes to npm as @cowdao-grants/cow-sdk-wasm; not published to crates.io."
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+# In-shim signing pulls in `alloy-signer-local` so the wasm crate can
+# accept a private-key hex string and produce signatures inside linear
+# memory. Off by default: production integrations sign with viem /
+# ethers / Safe and only need this crate to compute the EIP-712
+# typed-data hash. Enabling this feature adds ~80-120 KB of crypto
+# code to the wasm binary. `alloy-signer`'s `Signer` trait is reached
+# transitively through `alloy-signer-local`'s re-exports, so it does
+# not need its own `dep:` entry here.
+in_shim_signing = ["dep:alloy-signer-local"]
+
+[dependencies]
+# `http-client` (without default features) gives the facade's
+# orderbook client over the core crate's `fetch`-backed wasm32
+# transport, so `reqwest` is never linked into the wasm binary and the
+# shim ships no HTTP plumbing of its own. The subgraph GraphQL client
+# stays off.
+cowprotocol = { path = "../cowprotocol", version = "0.2.0", default-features = false, features = ["http-client"] }
+alloy-primitives.workspace = true
+alloy-signer-local = { workspace = true, optional = true }
+serde.workspace = true
+serde_json.workspace = true
+wasm-bindgen.workspace = true
+wasm-bindgen-futures.workspace = true
+serde-wasm-bindgen = "0.6"
+console_error_panic_hook = "0.1"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# Tiny global allocator (~5 KB) to replace dlmalloc on wasm32. The shim
+# is single-threaded, so we wrap the free-list allocator in
+# `AssumeSingleThreaded` to skip the lock.
+lol_alloc = "0.4"
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+# Runs the `#[wasm_bindgen_test]` suite in a real headless browser via
+# `wasm-pack test --headless --firefox`. Catches JS-marshalling and
+# transport regressions that `cargo test` cannot see (the unit tests run
+# on the host, not wasm32). Gated to wasm32 so plain `cargo test` on
+# native does not try to pull it in.
+wasm-bindgen-test = "0.3"
+# tests/browser.rs stubs `globalThis.fetch` via Reflect; the shim's own
+# sources no longer touch js-sys (the fetch transport lives in
+# `cowprotocol-orderbook` now), so it is a dev-dependency only.
+js-sys.workspace = true
+# tests/browser.rs drives `SubgraphClient` over the stubbed fetch to
+# lock in subgraph-on-wasm; the shim's own bindings leave `subgraph`
+# off, so the release wasm binary never carries it.
+cowprotocol = { path = "../cowprotocol", version = "0.2.0", default-features = false, features = ["subgraph"] }
+
+[package.metadata.wasm-pack.profile.release]
+# -Oz biases binaryen for binary size over speed (~30% smaller than
+# the default -O). Hot paths in this shim are network-bound (reqwest)
+# or one-shot EIP-712 hashing; speed regressions from -Oz are not
+# user-visible. Bulk-memory + mutable-globals are baseline post-MVP
+# features all the targeted browsers ship.
+wasm-opt = [
+    "-Oz",
+    # Match the post-MVP wasm features the Rust 1.91 compiler emits by
+    # default for wasm32-unknown-unknown. Without these wasm-opt fails
+    # validation on trunc_sat_f64_u, sign-extension ops, etc.
+    "--enable-bulk-memory",
+    "--enable-mutable-globals",
+    "--enable-nontrapping-float-to-int",
+    "--enable-sign-ext",
+    "--enable-reference-types",
+]
