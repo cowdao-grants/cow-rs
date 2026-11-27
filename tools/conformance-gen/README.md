@@ -9,8 +9,6 @@ kind of values from services itself, the Rust implementation the orderbook runs.
 `vector-gen` records one order on ten chains, seven struct-hash permutations
 and one EIP-712 signature; this tool records 19 orders on mainnet, each with
 EIP-712 and EthSign signatures.
-`parity/source-lock.toml` still records an older services pin (`47af30fe`);
-this tool does not read it.
 
 ## Coverage
 
@@ -18,7 +16,8 @@ The 19 orders cover all 12 combinations of order kind, sell-token source and
 buy-token destination, plus three receiver cases, two amount boundaries and two
 `validTo` boundaries. Each order is signed under EIP-712 and EthSign: 38
 signing-scheme checks in total. Changing the matrix means updating the case
-count in `src/main.rs` and `minItems`/`maxItems` in the schema.
+count in `src/main.rs`, `minItems`/`maxItems` in the schema and the coverage
+checks in `crates/cowprotocol-signing/tests/conformance.rs`.
 
 The base order starts from the order in services' `compute_order_uid` test,
 which is also cow-rs's `sample_order()` and the `vector-gen` base order;
@@ -27,9 +26,10 @@ settlement contract and signer are fixed. Every order sets `partiallyFillable`
 to false. The two amount boundary vectors set the sell, buy and fee amounts to
 the same boundary value. The absent and zero-address receiver cases produce the
 same hash, signatures and UID, because services encodes an absent receiver as
-the zero address. The non-zero fee is included in the order fields used for
-hashing and signing. These cases do not test orderbook acceptance. EIP-1271
-and presign are out of scope.
+the zero address. The base order keeps the non-zero fee from services' test,
+and the fee is part of the signed order. The orderbook rejects new orders with
+a non-zero fee, so these cases do not test orderbook acceptance. EIP-1271 and
+presign are out of scope.
 
 ## Format
 
@@ -60,45 +60,45 @@ each signature and compare it with `signer`.
 
 ## Schema version
 
-After the first merge, incompatible changes to field names, required fields,
-types or structure require a new schema version. A change to calculated values
-alone does not necessarily change the format. `servicesSha` records which
-services implementation supplied those values.
+Incompatible changes to field names, required fields, types or structure
+require a new schema version. A change to calculated values alone does not
+necessarily change the format. `servicesSha` records which services
+implementation supplied those values.
 
-A version bump changes `SCHEMA_VERSION` and the schema's `schemaVersion`
-constant, and renames the `.v1.` files: the output path in `src/main.rs`, the
-schema file, the `.gitignore` entry and the paths in this README.
+A version bump changes `SCHEMA_VERSION`, the schema's `schemaVersion` constant
+and the version the test expects, and renames the `.v1.` files: the output path
+in `src/main.rs`, the test's fixture path, the schema file and its `$id`, the
+`.gitignore` entry and the paths in this README.
 
 ## Regeneration
 
-Run from the repository root:
+From the repository root, generate the fixture and compare cow-rs with it:
 
 ```sh
 cargo run --locked --manifest-path tools/conformance-gen/Cargo.toml
+cargo test --locked -p cowprotocol-signing --test conformance -- --ignored
 ```
 
-The generated `crates/cowprotocol-signing/tests/fixtures/conformance_vectors.v1.json`
-is gitignored and not committed; regenerate it before anything reads it.
-Dependencies need network access on first build; cached builds can use
-`--offline`.
+The `conformance` CI job runs the same commands. The fixture,
+`crates/cowprotocol-signing/tests/fixtures/conformance_vectors.v1.json`, is
+gitignored. If a vector does not match, the failure names the vector and the
+value that differs.
 
-To change the pin, update both `rev` values in the tool's `Cargo.toml`,
-`SERVICES_PIN` in `src/main.rs` and the revision at the top of this README.
-Refresh the tool's lockfile without `--locked`, then regenerate the fixture
-with `--locked`. Run the tool's formatting and Clippy checks, validate the
-fixture against the schema and review any changed values or serialisation.
-A pin change can change services' serialisation as well as its calculations.
+CI catches cow-rs results that disagree with the pinned services commit for
+these vectors. It does not see newer services changes until the pin moves.
 
-The lockfile is committed so that `--locked` reproduces the same dependency
-graph. The services crates in it resolve to the commit in `SERVICES_PIN`.
-That is checked by hand: the generator does not compare the lockfile with
-`SERVICES_PIN` or with the revision stated in this README. `--locked` stops
-resolution from changing the lockfile; it does not check those references,
-the documentation or security advisories.
+## Changing the pin
 
-The tool has its own lockfile and is excluded from the workspace to keep native
-services dependencies out of SDK/WASM builds. Run its formatting and Clippy
-checks separately using the same `--manifest-path`.
+1. Set the new commit in both `rev` values in `Cargo.toml`, `SERVICES_PIN` in
+   `src/main.rs`, the services `sha` in `parity/source-lock.toml` and the first
+   paragraph of this README.
+2. Run the generator once without `--locked` to update its lockfile.
+   Check that the resolved services dependencies use the new commit;
+   `--locked` does not check `SERVICES_PIN` against those dependencies.
+3. Run the two commands above. The test fails if the fixture and
+   `source-lock.toml` name different commits.
+4. Validate the fixture against the schema and review the changed values.
 
-No test reads the fixture in Milestone 1. The cow-rs consumer test, the
-source-lock update and CI belong to Milestone 2.
+The tool is outside the workspace so that services dependencies stay out of SDK
+and WASM builds. Run `cargo fmt` and `cargo clippy` on it with
+`--manifest-path`.
